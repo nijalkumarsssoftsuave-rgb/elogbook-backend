@@ -60,10 +60,10 @@ def test_illegal_transition_raises():
 
 
 def test_overdue_only_when_past_due_and_not_terminal():
-    from datetime import date, timedelta
+    from datetime import UTC, datetime, timedelta
 
     a = _action(S.OPEN)
-    a.due_date = date.today() - timedelta(days=1)
+    a.due_date = datetime.now(UTC).date() - timedelta(days=1)
     assert a.is_overdue() is True
     a.status = S.COMPLETED
     assert a.is_overdue() is False
