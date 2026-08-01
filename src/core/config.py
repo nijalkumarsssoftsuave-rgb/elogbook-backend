@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     shift_start_hour: int = 6  # 06:00
     shift_overlap_minutes: int = 15  # 06:00–06:15 overlap
 
+    # --- shift history query range (US-009 ES-312) ---
+    # A distinct concern from the shift-*definition* bootstrap defaults above: this
+    # bounds how wide a GET /shifts date range can be, not the shift window shape itself.
+    shift_history_max_range_days: int = 92
+
     # --- pending-action workflow (Admin-toggled; BRD FR-PA-05) ---
     # when False: capture + confirm-inclusion only, no assignment or lifecycle tracking
     action_workflow_enabled: bool = False

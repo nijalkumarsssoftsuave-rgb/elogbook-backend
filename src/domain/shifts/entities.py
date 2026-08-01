@@ -10,7 +10,7 @@ immutable, audit-friendly change history.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 
 @dataclass(frozen=True)
@@ -147,3 +147,95 @@ class ShiftConfiguration:
             if area_specific is not None:
                 return area_specific
         return _best([c for c in configs if c.area is None])
+
+
+def enumerate_shifts(
+    configs: list[ShiftConfiguration],
+    window_start: datetime,
+    window_end: datetime,
+    area: str | None,
+    *,
+    default_start_hour: int,
+    default_hours: int,
+    default_overlap_minutes: int,
+) -> list[tuple[Shift, str | None]]:
+    """Enumerate shift windows in [window_start, window_end) by walking a cursor
+    (US-009 ES-312).
+
+    Returns (Shift, resolved_area) pairs ascending by starts_at, mirroring
+    resolve_current_shift's (Shift, area) tuple convention (ES-307) — resolved_area is
+    the actual config's own area (None for plant-wide/fallback), not necessarily the
+    `area` argument. Domain-pure: no Settings import (the app layer passes its shift_*
+    defaults as the default_* args) — duplicates a few lines of Settings-fallback logic
+    already in resolve_current_shift; that's intentional (the domain can't see Settings).
+
+    Emits a window only when Shift.starts_at == cursor — this single rule drops any
+    window straddling the true walk start, skips the overlapping re-derivation right
+    after a mid-shift config change, and guarantees strictly increasing starts_at /
+    unique ids. A config change mid-shift leaves a short, deliberately un-enumerated gap
+    between the old shift's clean end and the new shift's next clean boundary — a known,
+    accepted trade-off (not a bug): re-deriving that stretch under the new config would
+    produce a window that conflicts with what was already resolved for it under the old
+    one, which is worse than a gap. See ``GET /shifts``'s docstring for the API-visible
+    consequence (a shift can be absent from results even though it briefly overlaps the
+    requested range).
+
+    Correctness note: the cursor walk does NOT start exactly at ``window_start``. A
+    shift already in progress at ``window_start`` may have begun under a DIFFERENT
+    configuration than whatever is effective exactly at ``window_start`` (the same
+    mid-shift-change scenario the emit rule above handles — it just also happens to
+    straddle the caller's requested window, not only a shift boundary). Restarting the
+    walk fresh at ``window_start`` would silently re-derive that in-progress shift under
+    the newer configuration, producing a window that overlaps/conflicts with what a
+    continuous walk — or a differently-windowed query for the same instant, e.g.
+    ``GET /shifts/{id}`` vs. a multi-day ``GET /shifts`` — would produce. A shift is at
+    most 24h long (``ShiftConfiguration.validate()`` bounds ``hours`` to 1..24), so any
+    shift touching ``window_start`` must itself have started no earlier than
+    ``window_start - 24h``. Seeding the cursor there and filtering the emitted results
+    back down to ``starts_at >= window_start`` guarantees every caller — regardless of
+    the window it asks for — derives the same, single, consistent answer for any given
+    instant.
+    """
+    if window_end <= window_start:
+        return []
+    result: list[tuple[Shift, str | None]] = []
+    cursor = window_start - timedelta(hours=24)
+    while cursor < window_end:
+        cfg = ShiftConfiguration.effective_for(configs, cursor, area)
+        if cfg is None:
+            shift = Shift.resolve(
+                cursor, default_start_hour, default_hours, default_overlap_minutes
+            )
+            resolved_area = None
+        else:
+            shift = Shift.from_config(cfg, cursor)
+            resolved_area = cfg.area
+        if shift.ends_at <= cursor:
+            raise ValueError(
+                f"Non-advancing shift window at {cursor.isoformat()} "
+                f"(ends_at={shift.ends_at.isoformat()}) — a configuration bypassed validate()."
+            )
+        if shift.starts_at == cursor and shift.starts_at >= window_start:
+            result.append((shift, resolved_area))
+        cursor = shift.ends_at
+    return result
+
+
+def parse_shift_id(shift_id: str) -> date | None:
+    """The calendar date encoded in ``shift_id`` (its ``YYYYMMDD`` component).
+
+    Returns ``None`` for anything malformed: no ``-`` separator, a prefix that isn't 8
+    digits, an invalid calendar date (e.g. month 13), or an empty label after the dash.
+    Matching a shift by id must compare the full id string against an enumerated shift's
+    own ``shift_id`` — this helper only narrows the enumeration window; it must never be
+    used to re-derive the window from the label.
+    """
+    prefix, sep, label = shift_id.partition("-")
+    if not sep or not label:
+        return None
+    if len(prefix) != 8 or not prefix.isdigit():
+        return None
+    try:
+        return datetime.strptime(prefix, "%Y%m%d").date()
+    except ValueError:
+        return None
