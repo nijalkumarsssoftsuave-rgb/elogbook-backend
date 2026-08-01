@@ -1,9 +1,10 @@
-"""Integration tests for area-based data scope on GET /shifts/current (US-007 ES-305).
+"""Integration tests for area-based data scope on GET /shifts/current (US-007 ES-305/306).
 
 Touches both the role store (custom scoped roles) and the shift-config store (US-008),
 so the reset fixture below clears both — mirrors ``test_admin_roles_api.py``'s role
-reset and ``test_shift_config_api.py``'s shift-config reset combined. Narrowing via
-``?area=`` is ES-306 and is tested there once the endpoint supports it.
+reset and ``test_shift_config_api.py``'s shift-config reset combined. Comprehensive
+custom-role-scoped narrow/reject scenarios are ES-307's job; this file's ES-306
+additions only cover the unscoped (full-plant) narrowing path and request validation.
 """
 
 import pytest
@@ -84,3 +85,20 @@ async def test_role_scoped_to_two_areas_shows_both(client):
     resp = await client.get("/api/v1/shifts/current", headers={"Authorization": scoped_token})
     assert resp.status_code == 200
     assert set(resp.json()["data"]["scope"]) == {"Train 1", "Train 2"}
+
+
+async def test_full_plant_operator_narrows_with_area_param(client):
+    resp = await client.get(
+        "/api/v1/shifts/current",
+        headers={"Authorization": OPERATOR},
+        params={"area": "Train 1"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["scope"] == ["Train 1"]
+
+
+async def test_empty_area_param_is_unprocessable(client):
+    resp = await client.get(
+        "/api/v1/shifts/current", headers={"Authorization": OPERATOR}, params={"area": ""}
+    )
+    assert resp.status_code == 422

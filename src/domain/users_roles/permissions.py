@@ -45,6 +45,15 @@ class AreaScope:
             return True
         return area is not None and area in self.areas
 
+    def narrowed_to(self, requested: str) -> "AreaScope | None":
+        """The single-area scope for ``requested``, or ``None`` if out of scope.
+
+        Returns ``None`` as a sentinel rather than raising — this is the domain layer,
+        which must not import api-layer exceptions; the caller (application layer)
+        turns ``None`` into a 403 (ES-306, ``resolve_query_scope``).
+        """
+        return AreaScope((requested,)) if self.covers(requested) else None
+
     def as_list(self) -> list[str] | None:
         """This scope's areas as a plain list, for embedding in responses/DTOs."""
         return None if self.areas is None else list(self.areas)

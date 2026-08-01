@@ -5,6 +5,7 @@ Roles (and the permissions they carry) are real data now — see
 base role's wildcard (``"*"``) is seed data on that role, not a special case here.
 """
 
+from src.api.errors.exceptions import ForbiddenError
 from src.domain.users_roles.entities import Role
 from src.domain.users_roles.permissions import AreaScope
 
@@ -32,12 +33,22 @@ def area_scope_for_roles(roles: list[Role]) -> list[str] | None:
     return sorted(scope) if scope else None
 
 
-def resolve_query_scope(area_scope: list[str] | None) -> list[str] | None:
+def resolve_query_scope(
+    area_scope: list[str] | None, requested_area: str | None = None
+) -> list[str] | None:
     """The areas this request is restricted to. ``None`` = unrestricted (full plant).
 
-    ES-305: full-plant callers (the default for every base operational role) get
-    ``None`` back — no restriction. A role with an area scope gets that scope back
-    unchanged. Narrowing to one specific area via an explicit request (``?area=``) is
-    ES-306; this is the baseline "what do I see by default" resolution.
+    ES-305: with no ``requested_area``, a full-plant caller gets ``None`` back and a
+    scoped caller gets their own scope back — the baseline "what do I see by default".
+    ES-306: an explicit ``requested_area`` narrows further — a full-plant caller may
+    narrow to any area; a scoped caller may narrow within their own scope. Raises
+    ``ForbiddenError`` (403) if ``requested_area`` falls outside the caller's scope —
+    an out-of-scope request is refused, not silently ignored or silently widened.
     """
-    return AreaScope.of(area_scope).as_list()
+    scope = AreaScope.of(area_scope)
+    if requested_area is None:
+        return scope.as_list()
+    narrowed = scope.narrowed_to(requested_area)
+    if narrowed is None:
+        raise ForbiddenError(f"Your role's data scope does not include area '{requested_area}'.")
+    return narrowed.as_list()

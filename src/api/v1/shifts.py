@@ -1,6 +1,8 @@
 """Shift-context endpoints."""
 
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 
 from src.api.deps import Config, CurrentUser, ShiftConfigRepositoryDep, require_permission
 from src.api.schemas.shift import ShiftContext
@@ -13,16 +15,22 @@ router = APIRouter(tags=["shifts"], dependencies=[Depends(require_permission("sh
 
 
 @router.get("/shifts/current")
-async def current_shift(config: Config, repo: ShiftConfigRepositoryDep, user: CurrentUser) -> dict:
+async def current_shift(
+    config: Config,
+    repo: ShiftConfigRepositoryDep,
+    user: CurrentUser,
+    area: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+) -> dict:
     """Return the shift the current instant falls into (Admin-configurable window).
 
     Resolves from the persisted, effective-dated shift-configuration store (ES-308),
     falling back to the static bootstrap defaults if no configuration is effective yet.
-    ``scope`` reports the caller's data-visibility restriction (ES-305): ``None`` for
-    the default full-plant case, or the specific areas a restricted custom role is
-    scoped to.
+    ``scope`` reports the caller's data-visibility restriction: ``None`` by default for
+    the full-plant case (ES-305), or narrowed to ``?area=`` when given (ES-306) — a
+    full-plant caller may narrow to any area; a scoped caller only within their own
+    scope (403 otherwise).
     """
-    scope = resolve_query_scope(user.area_scope)
+    scope = resolve_query_scope(user.area_scope, area)
     shift, resolved_area = await resolve_current_shift(repo, config, now=None, area=None)
     payload = ShiftContext(
         shift_id=shift.shift_id,
