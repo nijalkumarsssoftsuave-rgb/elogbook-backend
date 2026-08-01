@@ -14,3 +14,7 @@ class ShiftContext(BaseModel):
     area: str | None = (
         None  # the area whose shift configuration produced this window; None = plant-wide
     )
+    # The *effective per-request* data scope, NOT the role's static area_scope already
+    # exposed elsewhere (e.g. GET /me) — same shape, different meaning: this one
+    # reflects this specific request's caller, not a general role property.
+    scope: list[str] | None = None
