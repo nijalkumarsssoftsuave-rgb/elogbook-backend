@@ -5,6 +5,7 @@ writer sharing one transaction via the unit of work — against an in-memory SQL
 so no SQL Server is required. Skips if SQLAlchemy/aiosqlite are not installed.
 """
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -136,6 +137,50 @@ async def test_confirm_inclusion_persists_with_ai_source_and_distinct_audit_acti
     assert len(rows) == 1
     assert rows[0]._mapping["action"] == "pending_action.confirm_inclusion"
     assert rows[0]._mapping["actor"] == "sam.super"
+
+
+async def test_every_transition_is_audited_with_actor_and_timestamp(sessionmaker):
+    """ES-352 — every state change in a multi-step lifecycle gets its own audited row
+
+    with a real actor and timestamp, not just the first transition (the only one the
+    other transition test exercises).
+    """
+    async with SqlUnitOfWork(sessionmaker) as uow:
+        created = await capture_action(
+            uow.actions,
+            issue="Calibrate transmitter",
+            priority=Priority.MEDIUM,
+            source=Source.MANUAL,
+            audit=uow.audit,
+            actor="jane.operator",
+        )
+
+    steps = [
+        (PendingActionStatus.IN_PROGRESS, "sam.super"),
+        (PendingActionStatus.COMPLETED, "sam.super"),
+        (PendingActionStatus.VERIFIED, "mo.super"),
+    ]
+    for target, actor in steps:
+        async with SqlUnitOfWork(sessionmaker) as uow:
+            await transition_action(uow.actions, created.id, target, audit=uow.audit, actor=actor)
+
+    async with sessionmaker() as s:
+        assert await verify_chain(s) is True
+        rows = (await s.execute(audit_log.select().order_by(audit_log.c.seq))).all()
+
+    transition_rows = [r for r in rows if r._mapping["action"] == "pending_action.transition"]
+    assert len(transition_rows) == len(steps)  # every step got its own row, none merged/dropped
+
+    expected_from = ["Open", "In Progress", "Completed"]
+    for row, (target, actor), from_status in zip(
+        transition_rows, steps, expected_from, strict=True
+    ):
+        m = row._mapping
+        assert m["actor"] == actor
+        assert m["occurred_at"] is not None
+        payload = json.loads(m["payload"])
+        assert payload["from"] == from_status
+        assert payload["to"] == target.value
 
 
 async def test_rollback_leaves_nothing_persisted(sessionmaker):

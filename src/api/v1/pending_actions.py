@@ -174,6 +174,9 @@ async def transition_pending_action(
     """Move an action to a new lifecycle state (workflow must be enabled)."""
     if not config.action_workflow_enabled:
         raise ForbiddenError("Action tracking is available only when the workflow is enabled.")
+    existing = await get_action(uow.actions, action_id)
+    if existing is None or not is_in_area_scope(existing.area, user.area_scope):
+        raise NotFoundError(f"Pending action {action_id} was not found.")
     action = await transition_action(
         uow.actions,
         action_id,
