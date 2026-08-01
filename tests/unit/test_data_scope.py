@@ -9,7 +9,11 @@ import dataclasses
 import pytest
 
 from src.api.errors.exceptions import ForbiddenError
-from src.application.auth.resolve_permissions import area_scope_for_roles, resolve_query_scope
+from src.application.auth.resolve_permissions import (
+    area_scope_for_roles,
+    resolve_query_scope,
+    sole_area,
+)
 from src.domain.users_roles.entities import Role
 from src.domain.users_roles.permissions import AreaScope
 
@@ -161,3 +165,18 @@ def test_resolve_query_scope_multi_role_union_with_full_plant_role_is_unrestrict
     unioned = area_scope_for_roles(roles)
     assert unioned is None
     assert resolve_query_scope(unioned, "Anywhere") == ["Anywhere"]
+
+
+# --- sole_area (ES-307) -------------------------------------------------------
+
+
+def test_sole_area_returns_the_only_area():
+    assert sole_area(["Train 1"]) == "Train 1"
+
+
+def test_sole_area_returns_none_for_full_plant():
+    assert sole_area(None) is None
+
+
+def test_sole_area_returns_none_when_scope_spans_several_areas():
+    assert sole_area(["Train 1", "Train 2"]) is None

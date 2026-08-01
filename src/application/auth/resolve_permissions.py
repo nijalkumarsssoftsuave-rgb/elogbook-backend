@@ -52,3 +52,22 @@ def resolve_query_scope(
     if narrowed is None:
         raise ForbiddenError(f"Your role's data scope does not include area '{requested_area}'.")
     return narrowed.as_list()
+
+
+def sole_area(scope: list[str] | None) -> str | None:
+    """The one area a resolved scope pins to; ``None`` when plant-wide or spanning several.
+
+    ES-307: a custom role restricted to exactly one area should see that area's OWN
+    shift configuration by default, not the plant-wide one — this is what selects it.
+    Used whether the caller narrowed via an explicit ``?area=`` or a single-area role's
+    own scope resolved to one area implicitly. A role spanning multiple areas (or full
+    plant) has no single area to prefer, so the plant-wide configuration applies.
+
+    ``scope`` is expected to already be the fully-resolved, cross-role union (see
+    ``Principal.area_scope``, built by ``area_scope_for_roles`` at token-validation
+    time) — this function never itself disambiguates between a user's several roles; a
+    user with two single-area roles for different areas correctly lands here with a
+    two-element ``scope`` and gets the plant-wide fallback, same as one role with a
+    two-element ``area_scope``.
+    """
+    return scope[0] if scope is not None and len(scope) == 1 else None
