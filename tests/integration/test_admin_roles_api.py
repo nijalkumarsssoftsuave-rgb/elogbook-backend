@@ -94,7 +94,7 @@ async def test_base_role_cannot_be_modified_or_deleted(client):
     update = await client.patch(
         f"/api/v1/admin/roles/{base['id']}",
         headers={"Authorization": ADMIN},
-        json={"permissions": ["*"]},
+        json={"permissions": ["user:read"]},
     )
     assert update.status_code == 409
 
