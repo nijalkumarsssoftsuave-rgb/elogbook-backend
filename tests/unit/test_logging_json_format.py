@@ -9,6 +9,7 @@ makes this a real, reachable case, not a theoretical one.
 
 import json
 import logging
+import sys
 
 from src.core.logging import _JsonFormatter
 
@@ -47,3 +48,33 @@ def test_all_expected_fields_present():
     assert parsed["correlation_id"] == "test-cid"
     assert parsed["message"] == "plain message"
     assert "ts" in parsed
+
+
+def test_exception_info_is_included_when_present():
+    """Regression: logger.exception() used to silently drop the traceback entirely.
+
+    Found live, debugging an unrelated sweep failure that had nothing but "failed" in
+    the log with no way to see why.
+    """
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=1,
+            msg="failed",
+            args=(),
+            exc_info=sys.exc_info(),
+        )
+        record.correlation_id = "test-cid"
+        line = _JsonFormatter().format(record)
+
+    parsed = json.loads(line)
+    assert "ValueError: boom" in parsed["exception"]
+
+
+def test_no_exception_key_when_none_present():
+    line = _format("plain message")
+    assert "exception" not in json.loads(line)

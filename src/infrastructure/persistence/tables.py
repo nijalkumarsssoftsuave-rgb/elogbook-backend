@@ -60,6 +60,21 @@ pending_actions = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
+# --- notifications (ES-355) --------------------------------------------------------
+notifications = Table(
+    "notifications",
+    metadata,
+    Column("id", String(32), primary_key=True),  # uuid4 hex
+    Column("recipient", String(128), nullable=False, index=True),  # username
+    Column("channel", String(10), nullable=False),  # "in_app" | "email"
+    Column("subject", String(256), nullable=False),
+    Column("message", Text, nullable=False),
+    Column("related_entity_type", String(64), nullable=True),
+    Column("related_entity_id", String(64), nullable=True, index=True),  # exists_for_entity()
+    Column("read", Boolean, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
 # --- hash-chained audit trail -----------------------------------------------------
 # Append-only and tamper-evident: each row carries the SHA-256 of (previous hash +
 # canonical row content), so any later edit breaks the chain. In production this table

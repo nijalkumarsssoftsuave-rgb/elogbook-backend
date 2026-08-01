@@ -32,15 +32,19 @@ class _JsonFormatter(logging.Formatter):
     """
 
     def format(self, record: logging.LogRecord) -> str:
-        return json.dumps(
-            {
-                "ts": self.formatTime(record),
-                "level": record.levelname,
-                "logger": record.name,
-                "correlation_id": getattr(record, "correlation_id", "-"),
-                "message": record.getMessage(),
-            }
-        )
+        payload = {
+            "ts": self.formatTime(record),
+            "level": record.levelname,
+            "logger": record.name,
+            "correlation_id": getattr(record, "correlation_id", "-"),
+            "message": record.getMessage(),
+        }
+        # logger.exception()/logger.error(exc_info=True) — without this, the traceback
+        # is silently dropped (found live: the overdue sweep's per-action failure
+        # handler logged "failed to alert owner" with no way to see why).
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload)
 
 
 def configure_logging(level: str = "INFO") -> None:
