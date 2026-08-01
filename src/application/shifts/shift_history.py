@@ -1,4 +1,4 @@
-"""Use case: browse shift history (US-009 — EP-05, ES-312).
+"""Use case: browse shift history (US-009 — EP-05, ES-312/313).
 
 Derive, don't store: a shift window is fully determined by the versioned configuration
 from US-008 (``ShiftConfiguration``, append-only and effective-dated). This story adds
@@ -13,7 +13,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from src.api.errors.exceptions import ValidationError
 from src.application.shifts.repository import ShiftConfigRepository
 from src.core.config import Settings
-from src.domain.shifts.entities import Shift, enumerate_shifts
+from src.domain.shifts.entities import Shift, enumerate_shifts, parse_shift_id
 
 
 @dataclass(frozen=True)
@@ -59,3 +59,43 @@ async def list_shift_history(
         default_hours=settings.shift_hours,
         default_overlap_minutes=settings.shift_overlap_minutes,
     )
+
+
+async def get_shift_by_id(
+    repo: ShiftConfigRepository, settings: Settings, shift_id: str, area: str | None
+) -> tuple[Shift, str | None] | None:
+    """Return the single shift window matching ``shift_id``, or ``None`` if not found.
+
+    The only match path is the full id string against the ids produced by enumerating
+    that day — ``parse_shift_id`` narrows the enumeration window (its own calendar day)
+    but the window itself is never re-derived from the label.
+    """
+    day = parse_shift_id(shift_id)
+    if day is None:
+        return None
+
+    configs = await repo.list_all()
+    try:
+        window_start = datetime.combine(day, time.min, tzinfo=UTC)
+        window_end = window_start + timedelta(days=1)
+        items = enumerate_shifts(
+            configs,
+            window_start,
+            window_end,
+            area,
+            default_start_hour=settings.shift_start_hour,
+            default_hours=settings.shift_hours,
+            default_overlap_minutes=settings.shift_overlap_minutes,
+        )
+    except OverflowError:
+        # A calendar-valid but implausible year (e.g. 9999 or 1) can push the internal
+        # 24h-lookback/1-day-forward window arithmetic past datetime's own MINYEAR/MAXYEAR
+        # bounds. No real shift could exist at such a date, so this is honestly a 404,
+        # not an unhandled 500 — the whole point of parse_shift_id accepting any
+        # calendar-valid date is that this function, not the caller, decides "not found."
+        return None
+
+    for shift, resolved_area in items:
+        if shift.shift_id == shift_id:
+            return shift, resolved_area
+    return None
