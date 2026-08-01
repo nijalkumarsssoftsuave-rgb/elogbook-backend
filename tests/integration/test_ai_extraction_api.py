@@ -9,6 +9,7 @@ from src.main import app
 from tests.helpers import bearer
 
 OPERATOR = bearer("jane.operator", ["OLNG-ELOG-OPERATORS"])
+SUPERVISOR = bearer("sam.super", ["OLNG-ELOG-SUPERVISORS"])
 
 
 @pytest.fixture(autouse=True)
@@ -51,21 +52,31 @@ async def test_blank_text_is_rejected(client):
     assert resp.status_code == 422
 
 
-async def test_confirming_a_candidate_reuses_the_existing_capture_endpoint(client):
+async def test_generic_capture_ignores_source_and_is_always_manual(client):
+    """ES-343 — the generic endpoint can't be used to sneak in an unconfirmed 'ai' source."""
+    resp = await client.post(
+        "/api/v1/pending-actions",
+        headers={"Authorization": OPERATOR},
+        json={"issue": "Check alarm", "source": "ai"},  # source is not a field anymore
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["source"] == "manual"
+
+
+async def test_supervisor_confirms_extracted_candidate_via_confirm_inclusion(client):
     extracted = await client.post(
         "/api/v1/pending-actions/extract-candidates",
         headers={"Authorization": OPERATOR},
-        json={"text": "Inspect PSV on V-101."},
+        json={"text": "Inspect PSV on V-101.", "area": "Train 1"},
     )
     candidate = extracted.json()["data"][0]
 
     confirmed = await client.post(
-        "/api/v1/pending-actions",
-        headers={"Authorization": OPERATOR},
+        "/api/v1/pending-actions/confirm-inclusion",
+        headers={"Authorization": SUPERVISOR},
         json={
             "issue": candidate["issue"],
             "priority": candidate["priority"],
-            "source": "ai",
             "area": candidate["area"],
             "equipment": candidate["equipment"],
         },
@@ -74,3 +85,14 @@ async def test_confirming_a_candidate_reuses_the_existing_capture_endpoint(clien
     body = confirmed.json()["data"]
     assert body["source"] == "ai"
     assert body["status"] == "Open"
+    assert body["area"] == "Train 1"
+
+
+async def test_operator_cannot_confirm_inclusion(client):
+    """Only a Supervisor+ (action:confirm) may record an inclusion decision."""
+    resp = await client.post(
+        "/api/v1/pending-actions/confirm-inclusion",
+        headers={"Authorization": OPERATOR},
+        json={"issue": "Inspect PSV on V-101"},
+    )
+    assert resp.status_code == 403
