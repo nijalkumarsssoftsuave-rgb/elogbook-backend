@@ -1,9 +1,9 @@
-"""SQL shift-configuration integration tests (US-008 ES-308).
+"""SQL shift-configuration integration tests (US-008 ES-308/309/311).
 
-Exercises the real production path — ``SqlShiftConfigRepository`` sharing a transaction
-via ``SqlShiftConfigUnitOfWork`` — against an in-memory SQLite database, so no SQL
-Server is required. Skips if SQLAlchemy/aiosqlite are not installed. Audit-trail
-assertions land in ES-311, once ``create_shift_configuration`` actually records one.
+Exercises the real production path — ``SqlShiftConfigRepository`` + the hash-chained
+audit writer sharing one transaction via ``SqlShiftConfigUnitOfWork`` — against an
+in-memory SQLite database, so no SQL Server is required. Skips if SQLAlchemy/aiosqlite
+are not installed.
 """
 
 import uuid
@@ -24,6 +24,8 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 from src.api.errors.exceptions import ConflictError  # noqa: E402
 from src.application.admin.manage_config import create_shift_configuration  # noqa: E402
 from src.domain.shifts.entities import ShiftConfiguration  # noqa: E402
+from src.infrastructure.audit.audit_reader import SqlAuditReader  # noqa: E402
+from src.infrastructure.audit.audit_writer import verify_chain  # noqa: E402
 from src.infrastructure.persistence.tables import audit_log, metadata  # noqa: E402
 from src.infrastructure.persistence.unit_of_work import SqlShiftConfigUnitOfWork  # noqa: E402
 
@@ -42,7 +44,7 @@ async def sessionmaker():
     await engine.dispose()
 
 
-async def test_create_persists(sessionmaker):
+async def test_create_persists_and_audits_together(sessionmaker):
     async with SqlShiftConfigUnitOfWork(sessionmaker) as uow:
         created = await create_shift_configuration(
             uow,
@@ -58,6 +60,14 @@ async def test_create_persists(sessionmaker):
     async with SqlShiftConfigUnitOfWork(sessionmaker) as uow:
         configs = await uow.shift_configs.list_all()
     assert any(c.id == created.id and c.start_hour == 7 for c in configs)
+
+    async with sessionmaker() as s:
+        assert await verify_chain(s) is True
+        rows = (await s.execute(audit_log.select())).all()
+    assert len(rows) == 1
+    assert rows[0]._mapping["action"] == "shift_config.create"
+    assert rows[0]._mapping["actor"] == "admin.user"
+    assert rows[0]._mapping["entity_id"] == "__plant__"
 
 
 async def test_get_by_id_and_unknown_id(sessionmaker):
@@ -133,6 +143,45 @@ async def test_conflict_inside_uow_leaves_nothing_persisted(sessionmaker):
     async with SqlShiftConfigUnitOfWork(sessionmaker) as uow:
         configs = await uow.shift_configs.list_all()
     assert len(configs) == 1  # only the first, successful create
+
+    async with sessionmaker() as s:
+        rows = (await s.execute(audit_log.select())).all()
+    assert len(rows) == 1  # only the first, successful create
+
+
+async def test_audit_entity_id_distinguishes_empty_string_area_from_plant_wide(sessionmaker):
+    """``area=""`` is a distinct (if unusual) area key from plant-wide (``area=None``).
+
+    Both ``effective_for``/``_latest_for_area`` compare with ``==``/``is``, so the audit
+    trail must not conflate the two under a shared ``"__plant__"`` bucket.
+    """
+    async with SqlShiftConfigUnitOfWork(sessionmaker) as uow:
+        await create_shift_configuration(
+            uow,
+            area=None,
+            start_hour=6,
+            hours=12,
+            overlap_minutes=15,
+            effective_from=datetime(2026, 1, 1, tzinfo=UTC),
+            expected_version=0,
+            actor="admin.user",
+        )
+    async with SqlShiftConfigUnitOfWork(sessionmaker) as uow:
+        await create_shift_configuration(
+            uow,
+            area="",
+            start_hour=6,
+            hours=12,
+            overlap_minutes=15,
+            effective_from=datetime(2026, 1, 1, tzinfo=UTC),
+            expected_version=0,
+            actor="admin.user",
+        )
+
+    async with sessionmaker() as s:
+        rows = (await s.execute(audit_log.select())).all()
+    entity_ids = {r._mapping["entity_id"] for r in rows}
+    assert entity_ids == {"__plant__", ""}
 
 
 async def test_db_constraint_catches_two_inserts_racing_on_the_same_version(sessionmaker):
@@ -256,3 +305,44 @@ async def test_historical_resolution_before_and_after_effective_date(sessionmake
     assert on_the_day.version == 2
     assert after.start_hour == 9
     assert after.version == 2
+
+
+async def test_history_reads_back_most_recent_first_with_correct_payloads(sessionmaker):
+    """Exercises the exact read path ``GET /admin/config/shift/history`` uses
+    (``SqlAuditReader.list_for_entity``) against real persisted rows — the create-time
+    audit write alone (``test_create_persists_and_audits_together``) doesn't prove the
+    history endpoint's own query returns them in the right order with the right content.
+    """
+    async with SqlShiftConfigUnitOfWork(sessionmaker) as uow:
+        first = await create_shift_configuration(
+            uow,
+            area=None,
+            start_hour=6,
+            hours=12,
+            overlap_minutes=15,
+            effective_from=datetime(2026, 1, 1, tzinfo=UTC),
+            expected_version=0,
+            actor="admin.user",
+        )
+    async with SqlShiftConfigUnitOfWork(sessionmaker) as uow:
+        second = await create_shift_configuration(
+            uow,
+            area=None,
+            start_hour=9,
+            hours=12,
+            overlap_minutes=15,
+            effective_from=datetime(2026, 6, 15, tzinfo=UTC),
+            expected_version=1,
+            actor="admin.user",
+        )
+
+    async with sessionmaker() as s:
+        entries = await SqlAuditReader(s).list_for_entity("shift_config", "__plant__")
+
+    assert [e.payload["version"] for e in entries] == [2, 1]  # most recent first
+    assert entries[0].payload["id"] == second.id
+    assert entries[0].payload["start_hour"] == 9
+    assert entries[1].payload["id"] == first.id
+    assert entries[1].payload["start_hour"] == 6
+    assert all(e.action == "shift_config.create" for e in entries)
+    assert all(e.actor == "admin.user" for e in entries)

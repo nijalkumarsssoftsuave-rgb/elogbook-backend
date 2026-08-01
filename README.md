@@ -91,6 +91,7 @@ under `sql` it's a real `auth.signin.success` / `auth.signin.denied` row in `aud
 | `GET/POST/PATCH/DELETE /api/v1/admin/roles` | ✅ working (custom roles, audited, admin-only) |
 | `GET /api/v1/admin/config/shift`, `/shift/versions` | ✅ working (ES-308, admin-only) |
 | `POST /api/v1/admin/config/shift` | ✅ working (append-only, effective-dated, optimistic concurrency — ES-308) |
+| `GET /api/v1/admin/config/shift/history` | ✅ working (audit trail of config changes — ES-311, admin-only) |
 | summaries · notifications · super-user | scaffolded, endpoints TODO |
 
 Cross-cutting foundations in place: the unified response envelope, error→status mapping,
