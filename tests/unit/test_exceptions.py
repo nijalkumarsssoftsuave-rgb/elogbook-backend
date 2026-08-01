@@ -4,6 +4,7 @@ every error class must map to the correct status code and a stable machine-reada
 Previously each of these was only ever hit indirectly through a specific HTTP scenario;
 this pins the status/code/message contract directly and independently of any endpoint.
 """
+
 import pytest
 
 from src.api.errors.exceptions import (

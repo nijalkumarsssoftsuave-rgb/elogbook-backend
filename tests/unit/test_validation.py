@@ -1,7 +1,8 @@
 """Unit tests: ES-359 — field-level and cross-entity validation.
 
 Covers:
-- Schema-level Pydantic validators (username, display_name, email, role name, permissions, AD groups).
+- Schema-level Pydantic validators (username, display_name, email, role name,
+  permissions, AD groups).
 - Application-level role-existence check on user create / update.
 - Application-level user-assignment conflict on role delete.
 All tests are pure (no I/O); in-memory stubs are used where repos are needed.
@@ -19,7 +20,6 @@ from src.application.admin.manage_users import create_user, update_user
 from src.domain.users_roles.entities import Role, User
 from src.infrastructure.persistence.in_memory_roles import InMemoryRoleRepository
 from src.infrastructure.persistence.in_memory_users import InMemoryUserRepository
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -194,7 +194,9 @@ def test_permission_wildcard_valid():
 
 
 def test_permission_resource_action_valid():
-    r = CreateRoleRequest(name="myrole", permissions=["user:read", "role:manage"], ad_groups=["GRP"])
+    r = CreateRoleRequest(
+        name="myrole", permissions=["user:read", "role:manage"], ad_groups=["GRP"]
+    )
     assert "user:read" in r.permissions
 
 
@@ -326,9 +328,7 @@ async def test_create_user_no_role_repo_skips_check():
 async def test_update_user_nonexistent_role_raises_validation_error():
     user_repo = InMemoryUserRepository()
     role_repo = InMemoryRoleRepository()
-    user = await create_user(
-        user_repo, username="eve", display_name="Eve", email="eve@x.com"
-    )
+    user = await create_user(user_repo, username="eve", display_name="Eve", email="eve@x.com")
 
     with pytest.raises(AppValidationError, match="does not exist"):
         await update_user(
@@ -343,9 +343,7 @@ async def test_update_user_nonexistent_role_raises_validation_error():
 async def test_update_user_clear_role_skips_existence_check():
     user_repo = InMemoryUserRepository()
     role_repo = InMemoryRoleRepository()
-    user = await create_user(
-        user_repo, username="frank", display_name="Frank", email="frank@x.com"
-    )
+    user = await create_user(user_repo, username="frank", display_name="Frank", email="frank@x.com")
 
     updated = await update_user(
         user_repo,

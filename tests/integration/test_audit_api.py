@@ -23,7 +23,9 @@ ADMIN = bearer("admin.user", ["OLNG-ELOG-ADMINS"])
 OPERATOR = bearer("jane.operator", ["OLNG-ELOG-OPERATORS"])
 
 
-def _fake_record(entity_type: str, entity_id: str, action: str, actor: str, payload: dict) -> AuditRecord:
+def _fake_record(
+    entity_type: str, entity_id: str, action: str, actor: str, payload: dict
+) -> AuditRecord:
     return AuditRecord(
         event_id="evt-" + action,
         occurred_at=datetime(2026, 8, 1, 12, 0, 0, tzinfo=UTC),
@@ -42,7 +44,9 @@ class FakeAuditReader(AuditReader):
         self._records = records
 
     async def list_for_entity(self, entity_type: str, entity_id: str) -> list[AuditRecord]:
-        return [r for r in self._records if r.entity_type == entity_type and r.entity_id == entity_id]
+        return [
+            r for r in self._records if r.entity_type == entity_type and r.entity_id == entity_id
+        ]
 
 
 @pytest.fixture(autouse=True)
@@ -130,7 +134,9 @@ async def test_user_history_returns_audit_entries_for_user(client):
 async def test_user_history_entry_shape(client):
     user_id = "shape-test-user"
     records = [
-        _fake_record("user", user_id, "user.create", "admin.user", {"username": "alice", "role_id": None})
+        _fake_record(
+            "user", user_id, "user.create", "admin.user", {"username": "alice", "role_id": None}
+        )
     ]
     reader = FakeAuditReader(records)
     app.dependency_overrides[get_audit_reader] = lambda: reader
@@ -191,7 +197,13 @@ async def test_role_history_requires_authentication(client):
 async def test_role_history_returns_entries_for_role(client):
     role_id = "custom-role-xyz"
     records = [
-        _fake_record("role", role_id, "role.update", "admin.user", {"name": "my_role", "permissions": ["user:read"]}),
+        _fake_record(
+            "role",
+            role_id,
+            "role.update",
+            "admin.user",
+            {"name": "my_role", "permissions": ["user:read"]},
+        ),
         _fake_record("role", role_id, "role.create", "admin.user", {"name": "my_role"}),
         _fake_record("role", "other-role", "role.create", "admin.user", {"name": "other"}),
     ]
@@ -214,7 +226,13 @@ async def test_role_history_returns_entries_for_role(client):
 async def test_role_history_entry_shape(client):
     role_id = "shape-test-role"
     records = [
-        _fake_record("role", role_id, "role.create", "admin.user", {"name": "site_lead", "permissions": ["user:read"]})
+        _fake_record(
+            "role",
+            role_id,
+            "role.create",
+            "admin.user",
+            {"name": "site_lead", "permissions": ["user:read"]},
+        )
     ]
     reader = FakeAuditReader(records)
     app.dependency_overrides[get_audit_reader] = lambda: reader

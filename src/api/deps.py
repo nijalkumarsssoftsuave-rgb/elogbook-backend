@@ -16,7 +16,7 @@ from src.application.audit.reader import AuditReader, NullAuditReader
 from src.application.audit.recorder import AuditRecorder, NullAuditRecorder
 from src.application.auth.resolve_permissions import has_permission
 from src.application.pending_actions.repository import PendingActionRepository
-from src.application.users_roles.repository import RoleRepository, UserRepository
+from src.application.users_roles.repository import RoleRepository
 from src.core.config import Settings, get_settings
 from src.infrastructure.auth.token_validator import Principal, validate_token
 from src.infrastructure.persistence.in_memory_pending_actions import (

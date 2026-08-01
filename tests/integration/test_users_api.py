@@ -117,9 +117,7 @@ async def test_operator_cannot_create_user(client):
 async def test_duplicate_username_is_conflict(client):
     payload = {"username": "john.doe", "display_name": "John Doe", "email": "john@olng.com"}
     await client.post("/api/v1/admin/users", headers={"Authorization": ADMIN}, json=payload)
-    resp = await client.post(
-        "/api/v1/admin/users", headers={"Authorization": ADMIN}, json=payload
-    )
+    resp = await client.post("/api/v1/admin/users", headers={"Authorization": ADMIN}, json=payload)
     assert resp.status_code == 409
 
 
@@ -262,9 +260,7 @@ async def test_delete_user_removes_record(client):
     )
     user_id = create.json()["data"]["id"]
 
-    delete = await client.delete(
-        f"/api/v1/admin/users/{user_id}", headers={"Authorization": ADMIN}
-    )
+    delete = await client.delete(f"/api/v1/admin/users/{user_id}", headers={"Authorization": ADMIN})
     assert delete.status_code == 200
     assert delete.json()["data"]["deleted"] == user_id
 

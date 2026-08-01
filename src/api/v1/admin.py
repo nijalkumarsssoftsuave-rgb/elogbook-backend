@@ -125,7 +125,10 @@ async def delete_role(
     user_uow: UserUoW,
     user: Annotated[Principal, Depends(require_permission("role:manage"))],
 ) -> dict:
-    """Delete a custom role. Base roles cannot be deleted (409). Fails (409) if users are assigned."""
+    """Delete a custom role.
+
+    Base roles cannot be deleted (409). Fails (409) if users are assigned.
+    """
     await delete_custom_role(
         uow.roles, role_id, user_repo=user_uow.users, audit=uow.audit, actor=user.username
     )

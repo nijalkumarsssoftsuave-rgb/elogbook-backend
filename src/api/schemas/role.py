@@ -24,7 +24,8 @@ class CreateRoleRequest(BaseModel):
     def _validate_name(cls, v: str) -> str:
         if not _ROLE_NAME_RE.match(v):
             raise ValueError(
-                "Role name must start with a letter and contain only letters, digits or underscores."
+                "Role name must start with a letter and contain only letters, "
+                "digits or underscores."
             )
         return v
 
@@ -36,7 +37,8 @@ class CreateRoleRequest(BaseModel):
                 raise ValueError("Each permission must be a non-empty string.")
             if not _PERMISSION_RE.match(p):
                 raise ValueError(
-                    f"Permission '{p}' must be '*' or in 'resource:action' format (e.g. 'user:read')."
+                    f"Permission '{p}' must be '*' or in 'resource:action' format "
+                    f"(e.g. 'user:read')."
                 )
         return v
 
@@ -67,7 +69,8 @@ class UpdateRoleRequest(BaseModel):
             return v
         if not _ROLE_NAME_RE.match(v):
             raise ValueError(
-                "Role name must start with a letter and contain only letters, digits or underscores."
+                "Role name must start with a letter and contain only letters, "
+                "digits or underscores."
             )
         return v
 
@@ -81,7 +84,8 @@ class UpdateRoleRequest(BaseModel):
                 raise ValueError("Each permission must be a non-empty string.")
             if not _PERMISSION_RE.match(p):
                 raise ValueError(
-                    f"Permission '{p}' must be '*' or in 'resource:action' format (e.g. 'user:read')."
+                    f"Permission '{p}' must be '*' or in 'resource:action' format "
+                    f"(e.g. 'user:read')."
                 )
         return v
 

@@ -71,9 +71,7 @@ class SqlUserRepository(UserRepository):
     async def update(self, user: User) -> User:
         values = _to_values(user)
         values.pop("id")
-        await self._session.execute(
-            update(users).where(users.c.id == user.id).values(**values)
-        )
+        await self._session.execute(update(users).where(users.c.id == user.id).values(**values))
         return user
 
     async def delete(self, user_id: str) -> None:

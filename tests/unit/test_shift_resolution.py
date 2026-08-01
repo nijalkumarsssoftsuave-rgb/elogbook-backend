@@ -4,6 +4,7 @@ Previously only exercised indirectly through ``GET /shifts/current`` at the real
 clock, so the day/night boundary and previous-day wraparound branches had no
 deterministic coverage.
 """
+
 from datetime import UTC, datetime
 
 from src.application.shifts.current_shift import get_current_shift

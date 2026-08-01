@@ -57,7 +57,7 @@ class User:
     """
 
     id: str
-    username: str        # AD sAMAccountName, stored lowercase
+    username: str  # AD sAMAccountName, stored lowercase
     display_name: str
     email: str
     is_active: bool

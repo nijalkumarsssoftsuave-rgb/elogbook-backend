@@ -95,9 +95,7 @@ async def test_create_user_no_audit_skips_silently(user_repo):
 
 
 async def test_update_user_records_user_update(user_repo, audit):
-    user = await create_user(
-        user_repo, username="dave", display_name="Dave", email="d@x.com"
-    )
+    user = await create_user(user_repo, username="dave", display_name="Dave", email="d@x.com")
     audit.entries.clear()
     await update_user(
         user_repo,
@@ -116,12 +114,8 @@ async def test_update_user_records_user_update(user_repo, audit):
 
 
 async def test_update_user_payload_includes_all_current_fields(user_repo, audit):
-    user = await create_user(
-        user_repo, username="eve", display_name="Eve", email="eve@x.com"
-    )
-    await update_user(
-        user_repo, user.id, is_active=False, audit=audit, actor="admin.user"
-    )
+    user = await create_user(user_repo, username="eve", display_name="Eve", email="eve@x.com")
+    await update_user(user_repo, user.id, is_active=False, audit=audit, actor="admin.user")
     payload = audit.last.payload
     assert "username" in payload
     assert "display_name" in payload
@@ -132,17 +126,13 @@ async def test_update_user_payload_includes_all_current_fields(user_repo, audit)
 
 
 async def test_update_user_no_audit_skips_silently(user_repo):
-    user = await create_user(
-        user_repo, username="frank", display_name="Frank", email="f@x.com"
-    )
+    user = await create_user(user_repo, username="frank", display_name="Frank", email="f@x.com")
     updated = await update_user(user_repo, user.id, display_name="Frank New", audit=None)
     assert updated.display_name == "Frank New"
 
 
 async def test_delete_user_records_user_delete(user_repo, audit):
-    user = await create_user(
-        user_repo, username="grace", display_name="Grace", email="g@x.com"
-    )
+    user = await create_user(user_repo, username="grace", display_name="Grace", email="g@x.com")
     audit.entries.clear()
     await delete_user(user_repo, user.id, audit=audit, actor="admin.user")
     assert len(audit.entries) == 1
@@ -155,9 +145,7 @@ async def test_delete_user_records_user_delete(user_repo, audit):
 
 
 async def test_delete_user_no_audit_skips_silently(user_repo):
-    user = await create_user(
-        user_repo, username="henry", display_name="Henry", email="h@x.com"
-    )
+    user = await create_user(user_repo, username="henry", display_name="Henry", email="h@x.com")
     await delete_user(user_repo, user.id, audit=None)
 
 
