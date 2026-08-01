@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from src.api.deps import AuditReaderDep, RoleUoW, require_permission
+from src.api.deps import AuditReaderDep, RoleUoW, UserUoW, require_permission
 from src.api.schemas.audit import AuditEntryResponse
 from src.api.schemas.role import (
     CreateRoleRequest,
@@ -17,12 +17,20 @@ from src.api.schemas.role import (
     RoleResponse,
     UpdateRoleRequest,
 )
+from src.api.schemas.user import AdminUserResponse, CreateUserRequest, UpdateUserRequest
 from src.application.admin.manage_roles import (
     create_custom_role,
     delete_custom_role,
     get_group_role_mapping,
     list_roles,
     update_custom_role,
+)
+from src.application.admin.manage_users import (
+    create_user,
+    delete_user,
+    get_user,
+    list_users,
+    update_user,
 )
 from src.core.logging import correlation_id_ctx
 from src.core.response import ok
@@ -119,3 +127,79 @@ async def delete_role(
     """Delete a custom role. Base roles cannot be deleted (409)."""
     await delete_custom_role(uow.roles, role_id, audit=uow.audit, actor=user.username)
     return ok({"deleted": role_id}, correlation_id=_cid())
+
+
+# ---------------------------------------------------------------------------
+# User CRUD (ES-358)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/users", dependencies=[Depends(require_permission("user:read"))])
+async def list_users_endpoint(uow: UserUoW) -> dict:
+    """List all admin-provisioned users."""
+    result = await list_users(uow.users)
+    return ok([AdminUserResponse.of(u).model_dump() for u in result], correlation_id=_cid())
+
+
+@router.get("/users/{user_id}", dependencies=[Depends(require_permission("user:read"))])
+async def get_user_endpoint(user_id: str, uow: UserUoW) -> dict:
+    """Get a single admin-provisioned user by ID."""
+    result = await get_user(uow.users, user_id)
+    return ok(AdminUserResponse.of(result).model_dump(), correlation_id=_cid())
+
+
+@router.post("/users")
+async def create_user_endpoint(
+    body: CreateUserRequest,
+    uow: UserUoW,
+    actor: Annotated[Principal, Depends(require_permission("user:manage"))],
+) -> dict:
+    """Provision a new user, optionally with a manual role override."""
+    result = await create_user(
+        uow.users,
+        username=body.username,
+        display_name=body.display_name,
+        email=body.email,
+        role_id=body.role_id,
+        audit=uow.audit,
+        actor=actor.username,
+    )
+    return ok(AdminUserResponse.of(result).model_dump(), correlation_id=_cid())
+
+
+@router.patch("/users/{user_id}")
+async def update_user_endpoint(
+    user_id: str,
+    body: UpdateUserRequest,
+    uow: UserUoW,
+    actor: Annotated[Principal, Depends(require_permission("user:manage"))],
+) -> dict:
+    """Update a user. Pass ``clear_role: true`` to remove the manual role override."""
+    role_id_kwarg: dict = {}
+    if body.clear_role:
+        role_id_kwarg["role_id"] = None
+    elif body.role_id is not None:
+        role_id_kwarg["role_id"] = body.role_id
+
+    result = await update_user(
+        uow.users,
+        user_id,
+        display_name=body.display_name,
+        email=body.email,
+        is_active=body.is_active,
+        audit=uow.audit,
+        actor=actor.username,
+        **role_id_kwarg,
+    )
+    return ok(AdminUserResponse.of(result).model_dump(), correlation_id=_cid())
+
+
+@router.delete("/users/{user_id}")
+async def delete_user_endpoint(
+    user_id: str,
+    uow: UserUoW,
+    actor: Annotated[Principal, Depends(require_permission("user:manage"))],
+) -> dict:
+    """Delete a user record."""
+    await delete_user(uow.users, user_id, audit=uow.audit, actor=actor.username)
+    return ok({"deleted": user_id}, correlation_id=_cid())

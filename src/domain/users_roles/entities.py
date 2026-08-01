@@ -45,3 +45,41 @@ class Role:
 
     def touch(self) -> None:
         self.updated_at = datetime.now(UTC)
+
+
+@dataclass
+class User:
+    """A platform user provisioned by an Administrator, optionally with a manual role override.
+
+    AD group membership drives automatic role resolution at sign-in. An explicit ``role_id``
+    on this record overrides that automatic resolution — useful when a user's AD group
+    doesn't map cleanly to a single role (e.g. contractors, temporary access).
+    """
+
+    id: str
+    username: str        # AD sAMAccountName, stored lowercase
+    display_name: str
+    email: str
+    is_active: bool
+    role_id: str | None  # None = derive role from AD groups at token validation
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    @staticmethod
+    def create(
+        username: str,
+        display_name: str,
+        email: str,
+        role_id: str | None = None,
+    ) -> "User":
+        return User(
+            id=uuid.uuid4().hex,
+            username=username.lower(),
+            display_name=display_name,
+            email=email.lower(),
+            is_active=True,
+            role_id=role_id,
+        )
+
+    def touch(self) -> None:
+        self.updated_at = datetime.now(UTC)
