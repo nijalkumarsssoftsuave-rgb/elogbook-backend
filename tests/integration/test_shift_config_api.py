@@ -177,3 +177,30 @@ async def test_versions_endpoint_lists_newest_first(client):
     versions = [v["version"] for v in resp.json()["data"]]
     assert versions == sorted(versions, reverse=True)
     assert versions[0] == 2
+
+
+async def test_shifts_current_reflects_newly_posted_start_hour(client):
+    """End-to-end wiring proof (ES-309): GET /shifts/current resolves via the config store.
+
+    Doesn't assert against the wall clock directly (the endpoint always resolves "now").
+    Instead: with the default config (start_hour=6, hours=12) windows begin at 06:00 or
+    18:00; after posting start_hour=7 they begin at 07:00 or 19:00 — a disjoint set of
+    hours — so seeing the new set proves the endpoint picked up the posted change.
+    """
+    await client.post(
+        "/api/v1/admin/config/shift",
+        headers={"Authorization": ADMIN},
+        json={
+            "area": None,
+            "start_hour": 7,
+            "hours": 12,
+            "overlap_minutes": 15,
+            "effective_from": "2020-01-01T00:00:00+00:00",
+            "expected_version": 1,
+        },
+    )
+
+    after = await client.get("/api/v1/shifts/current", headers={"Authorization": ADMIN})
+    assert after.status_code == 200
+    starts_at_hour = int(after.json()["data"]["starts_at"][11:13])
+    assert starts_at_hour in (7, 19)

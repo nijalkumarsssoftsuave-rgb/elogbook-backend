@@ -11,3 +11,6 @@ class ShiftContext(BaseModel):
     starts_at: str  # ISO-8601
     ends_at: str  # ISO-8601
     overlap_minutes: int
+    area: str | None = (
+        None  # the area whose shift configuration produced this window; None = plant-wide
+    )
