@@ -89,6 +89,8 @@ under `sql` it's a real `auth.signin.success` / `auth.signin.denied` row in `aud
 | `POST /api/v1/pending-actions` (capture) | ✅ working (audited) |
 | `PATCH /api/v1/pending-actions/{id}/transition` | ✅ working (lifecycle, workflow-gated, audited) |
 | `GET/POST/PATCH/DELETE /api/v1/admin/roles` | ✅ working (custom roles, audited, admin-only) |
+| `GET /api/v1/admin/config/shift`, `/shift/versions` | ✅ working (ES-308, admin-only) |
+| `POST /api/v1/admin/config/shift` | ✅ working (append-only, effective-dated, optimistic concurrency — ES-308) |
 | summaries · notifications · super-user | scaffolded, endpoints TODO |
 
 Cross-cutting foundations in place: the unified response envelope, error→status mapping,

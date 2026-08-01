@@ -3,6 +3,7 @@
 Previously only asserted indirectly through HTTP responses in the contract tests; this
 exercises ``ok()``/``fail()`` directly.
 """
+
 from src.core.response import fail, ok
 
 

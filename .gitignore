@@ -29,6 +29,13 @@ ENV/
 *.sqlite3
 elogbook_local.db
 
+# --- Personal working notes (per-user-story status docs, not a deliverable) ---
+notes/
+
+# --- Local-machine-only compose overrides (e.g. port remaps to avoid clashing with
+# other projects' containers) — never shared, each dev's machine differs ---
+docker-compose.override.yml
+
 # --- Test / lint / type-check caches ---
 .pytest_cache/
 .mypy_cache/

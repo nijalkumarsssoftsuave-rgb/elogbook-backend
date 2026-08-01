@@ -4,6 +4,7 @@ Previously only exercised incidentally through auth/admin integration tests; thi
 isolates the union/wildcard/area-scope rules directly, including edge cases (mixed
 area scopes, a role with no permissions) that weren't pinned down anywhere.
 """
+
 from src.application.auth.resolve_permissions import (
     area_scope_for_roles,
     has_permission,

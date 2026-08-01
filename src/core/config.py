@@ -49,7 +49,13 @@ class Settings(BaseSettings):
     ai_service_url: str = "http://localhost:9000"
     ai_service_stub_enabled: bool = True
 
-    # --- shift definition (Admin-configurable; defaults per BRD FR-HOME-03) ---
+    # --- shift definition bootstrap defaults (BRD FR-HOME-03) ---
+    # US-008 ES-308: the live source of truth is now the persisted, append-only,
+    # effective-dated shift_configurations store (src/domain/shifts/entities.py:
+    # ShiftConfiguration) — these three settings are only the bootstrap fallback: the
+    # values baked into the MS SQL seed row (migrations/0003_shift_configurations.sql),
+    # the in-memory backend's seed row (InMemoryShiftConfigRepository), and what the
+    # resolver falls back to when no configuration is effective yet.
     shift_hours: int = 12
     shift_start_hour: int = 6  # 06:00
     shift_overlap_minutes: int = 15  # 06:00–06:15 overlap
