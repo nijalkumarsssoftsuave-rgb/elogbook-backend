@@ -18,10 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.application.audit.recorder import AuditRecorder
 from src.application.pending_actions.repository import PendingActionRepository
+from src.application.shifts.repository import ShiftConfigRepository
 from src.application.users_roles.repository import RoleRepository
 from src.infrastructure.audit.audit_writer import SqlAuditWriter
 from src.infrastructure.persistence.sql_pending_actions import SqlPendingActionRepository
 from src.infrastructure.persistence.sql_roles import SqlRoleRepository
+from src.infrastructure.persistence.sql_shift_config import SqlShiftConfigRepository
 
 
 class PendingActionUnitOfWork(Protocol):
@@ -47,6 +49,55 @@ class SqlUnitOfWork:
     async def __aenter__(self) -> "SqlUnitOfWork":
         self._session = self._session_factory()  # transaction autobegins on first execute
         self.actions = SqlPendingActionRepository(self._session)
+        self.audit = SqlAuditWriter(self._session)
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        try:
+            if exc_type is not None:
+                await self.rollback()
+            else:
+                await self.commit()
+        finally:
+            await self.close()
+
+    async def commit(self) -> None:
+        if self._session is not None:
+            await self._session.commit()
+
+    async def rollback(self) -> None:
+        if self._session is not None:
+            await self._session.rollback()
+
+    async def close(self) -> None:
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
+
+
+class ShiftConfigUnitOfWork(Protocol):
+    """The transaction boundary the shift-configuration use cases run within (ES-308)."""
+
+    shift_configs: ShiftConfigRepository
+    audit: AuditRecorder
+
+    async def commit(self) -> None: ...
+    async def rollback(self) -> None: ...
+    async def close(self) -> None: ...
+
+
+class SqlShiftConfigUnitOfWork:
+    """A single async transaction; repository and audit writer share its session."""
+
+    def __init__(self, session_factory: async_sessionmaker) -> None:
+        self._session_factory = session_factory
+        self._session: AsyncSession | None = None
+        self.shift_configs: ShiftConfigRepository
+        self.audit: AuditRecorder
+
+    async def __aenter__(self) -> "SqlShiftConfigUnitOfWork":
+        self._session = self._session_factory()
+        self.shift_configs = SqlShiftConfigRepository(self._session)
         self.audit = SqlAuditWriter(self._session)
         return self
 

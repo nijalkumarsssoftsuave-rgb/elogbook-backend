@@ -16,6 +16,7 @@ from src.application.audit.reader import AuditReader, NullAuditReader
 from src.application.audit.recorder import AuditRecorder, NullAuditRecorder
 from src.application.auth.resolve_permissions import has_permission
 from src.application.pending_actions.repository import PendingActionRepository
+from src.application.shifts.repository import ShiftConfigRepository
 from src.application.users_roles.repository import RoleRepository
 from src.core.config import Settings, get_settings
 from src.infrastructure.auth.token_validator import Principal, validate_token
@@ -23,7 +24,12 @@ from src.infrastructure.persistence.in_memory_pending_actions import (
     InMemoryPendingActionRepository,
 )
 from src.infrastructure.persistence.in_memory_roles import InMemoryRoleRepository
-from src.infrastructure.persistence.in_memory_uow import MemoryRoleUnitOfWork, MemoryUnitOfWork
+from src.infrastructure.persistence.in_memory_shift_config import InMemoryShiftConfigRepository
+from src.infrastructure.persistence.in_memory_uow import (
+    MemoryRoleUnitOfWork,
+    MemoryShiftConfigUnitOfWork,
+    MemoryUnitOfWork,
+)
 
 
 def get_config() -> Settings:
@@ -34,6 +40,7 @@ def get_config() -> Settings:
 # single process-local repository instances (used by the in-memory backend)
 _pending_action_repo = InMemoryPendingActionRepository()
 _role_repo = InMemoryRoleRepository()
+_shift_config_repo = InMemoryShiftConfigRepository(get_settings())
 
 
 def get_pending_action_repository() -> PendingActionRepository:
@@ -76,6 +83,24 @@ async def get_role_repository() -> AsyncIterator[RoleRepository]:
             yield SqlRoleRepository(session)
     else:
         yield _role_repo
+
+
+async def get_shift_config_repository() -> AsyncIterator[ShiftConfigRepository]:
+    """Inject a read-only shift-configuration repository for the configured backend.
+
+    Used to resolve the currently-effective shift and the admin read endpoints — a
+    plain read, not a transaction; mutations go through ``get_shift_config_uow``
+    instead. Mirrors ``get_role_repository``.
+    """
+    cfg = get_settings()
+    if cfg.persistence_backend == "sql":
+        from src.infrastructure.persistence.database import get_sessionmaker
+        from src.infrastructure.persistence.sql_shift_config import SqlShiftConfigRepository
+
+        async with get_sessionmaker()() as session:
+            yield SqlShiftConfigRepository(session)
+    else:
+        yield _shift_config_repo
 
 
 async def get_audit_recorder() -> AsyncIterator[AuditRecorder]:
@@ -134,6 +159,21 @@ async def get_role_uow() -> AsyncIterator[MemoryRoleUnitOfWork]:
         yield uow
 
 
+async def get_shift_config_uow() -> AsyncIterator[MemoryShiftConfigUnitOfWork]:
+    """Inject a shift-configuration unit of work for the configured backend (ES-308)."""
+    cfg = get_settings()
+    if cfg.persistence_backend == "sql":
+        from src.infrastructure.persistence.database import get_sessionmaker
+        from src.infrastructure.persistence.unit_of_work import SqlShiftConfigUnitOfWork
+
+        uow = SqlShiftConfigUnitOfWork(get_sessionmaker())
+    else:
+        uow = MemoryShiftConfigUnitOfWork(_shift_config_repo)
+
+    async with uow:
+        yield uow
+
+
 # Registers a real OpenAPI security scheme so Swagger shows the "Authorize" button
 # (top-right) instead of a per-endpoint header box; auto_error=False so a missing token
 # still reaches validate_token(None) and gets our standard UnauthorizedError envelope.
@@ -161,6 +201,8 @@ PendingActionUoW = Annotated[MemoryUnitOfWork, Depends(get_pending_action_uow)]
 RoleRepositoryDep = Annotated[RoleRepository, Depends(get_role_repository)]
 RoleUoW = Annotated[MemoryRoleUnitOfWork, Depends(get_role_uow)]
 AuditReaderDep = Annotated[AuditReader, Depends(get_audit_reader)]
+ShiftConfigRepositoryDep = Annotated[ShiftConfigRepository, Depends(get_shift_config_repository)]
+ShiftConfigUoW = Annotated[MemoryShiftConfigUnitOfWork, Depends(get_shift_config_uow)]
 
 
 def require_permission(permission: str):

@@ -9,6 +9,7 @@ path regardless of backend.
 
 from src.application.audit.recorder import AuditRecorder, NullAuditRecorder
 from src.application.pending_actions.repository import PendingActionRepository
+from src.application.shifts.repository import ShiftConfigRepository
 from src.application.users_roles.repository import RoleRepository
 
 
@@ -20,6 +21,29 @@ class MemoryUnitOfWork:
         self.audit: AuditRecorder = NullAuditRecorder()
 
     async def __aenter__(self) -> "MemoryUnitOfWork":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+
+class MemoryShiftConfigUnitOfWork:
+    """No-transaction unit of work over the shared in-memory shift-config repository."""
+
+    def __init__(self, repository: ShiftConfigRepository) -> None:
+        self.shift_configs = repository
+        self.audit: AuditRecorder = NullAuditRecorder()
+
+    async def __aenter__(self) -> "MemoryShiftConfigUnitOfWork":
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

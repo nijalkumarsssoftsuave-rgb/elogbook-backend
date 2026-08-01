@@ -17,6 +17,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    Index,
     Integer,
     MetaData,
     String,
@@ -58,6 +59,55 @@ pending_actions = Table(
     Column("due_date", Date, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+# --- shift configurations (US-008 ES-308 — append-only, effective-dated) ----------
+# A config change INSERTs a new version row, never UPDATEs — correct historical
+# resolution "for free" plus an immutable, audit-friendly change history. area is
+# nullable: NULL = plant-wide; an area-specific row overrides the plant-wide row for
+# that area when resolving (see domain/shifts/entities.py, ES-309's effective_for).
+shift_configurations = Table(
+    "shift_configurations",
+    metadata,
+    Column("id", String(32), primary_key=True),
+    Column("area", String(128), nullable=True),  # NULL = plant-wide
+    Column("start_hour", Integer, nullable=False),
+    Column("hours", Integer, nullable=False),
+    Column("overlap_minutes", Integer, nullable=False),
+    Column("effective_from", DateTime(timezone=True), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("created_by", String(128), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Index("ix_shift_configurations_area_effective", "area", "effective_from"),
+)
+
+# Backs the optimistic-concurrency check in create_shift_configuration() with real DB
+# constraints: two inserts racing on the same (area, version) — both having read the
+# same "previous version" before either committed — must not both succeed. A single
+# plain UNIQUE(area, version) can't express this on a nullable area column: MS SQL and
+# SQLite disagree on whether NULL is "equal to itself" for uniqueness (MS SQL treats
+# two same-NULL rows as duplicates if every other column also matches; SQLite/Postgres
+# never do, so a NULL row is invisible to the constraint entirely there) — verified
+# empirically, a plain composite UNIQUE constraint let two area=NULL/version=1 rows
+# through on SQLite. Two filtered/partial unique indexes make the intent explicit and
+# portable instead of relying on either engine's NULL-uniqueness quirk: area-specific
+# rows are unique per (area, version); plant-wide rows (area IS NULL) are unique per
+# version alone.
+Index(
+    "uq_shift_configurations_area_version",
+    shift_configurations.c.area,
+    shift_configurations.c.version,
+    unique=True,
+    sqlite_where=shift_configurations.c.area.isnot(None),
+    mssql_where=shift_configurations.c.area.isnot(None),
+)
+Index(
+    "uq_shift_configurations_plant_version",
+    shift_configurations.c.version,
+    unique=True,
+    sqlite_where=shift_configurations.c.area.is_(None),
+    mssql_where=shift_configurations.c.area.is_(None),
 )
 
 # --- hash-chained audit trail -----------------------------------------------------
