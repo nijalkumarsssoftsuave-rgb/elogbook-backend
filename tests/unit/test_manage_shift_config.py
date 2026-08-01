@@ -154,7 +154,7 @@ async def test_invalid_values_raise_validation_error(uow, kwargs):
         )
 
 
-async def test_invalid_values_do_not_persist(uow):
+async def test_invalid_values_do_not_persist_or_audit(uow):
     with pytest.raises(ValidationError):
         await create_shift_configuration(
             uow,
@@ -167,9 +167,10 @@ async def test_invalid_values_do_not_persist(uow):
             actor="admin.user",
         )
     assert len(await uow.shift_configs.list_all()) == 1  # only the seed row
+    assert uow.audit.entries == []
 
 
-async def test_conflict_does_not_persist(uow):
+async def test_conflict_does_not_persist_or_audit(uow):
     with pytest.raises(ConflictError):
         await create_shift_configuration(
             uow,
@@ -182,6 +183,53 @@ async def test_conflict_does_not_persist(uow):
             actor="admin.user",
         )
     assert len(await uow.shift_configs.list_all()) == 1  # only the seed row
+    assert uow.audit.entries == []
+
+
+async def test_create_records_exactly_one_audit_entry_with_correct_actor_and_payload(uow):
+    effective_from = datetime(2026, 6, 1, tzinfo=UTC)
+    created = await create_shift_configuration(
+        uow,
+        area="Train 1",
+        start_hour=7,
+        hours=8,
+        overlap_minutes=20,
+        effective_from=effective_from,
+        expected_version=0,
+        actor="admin.user",
+    )
+
+    assert len(uow.audit.entries) == 1
+    entry = uow.audit.entries[0]
+    assert entry.actor == "admin.user"
+    assert entry.action == "shift_config.create"
+    assert entry.entity_type == "shift_config"
+    assert entry.entity_id == "Train 1"
+    assert entry.payload == {
+        "id": created.id,
+        "area": "Train 1",
+        "start_hour": 7,
+        "hours": 8,
+        "overlap_minutes": 20,
+        "effective_from": effective_from.isoformat(),
+        "version": 1,
+        "expected_version": 0,
+        "created_by": "admin.user",
+    }
+
+
+async def test_plant_wide_audit_entity_id_is_stable_placeholder(uow):
+    await create_shift_configuration(
+        uow,
+        area=None,
+        start_hour=7,
+        hours=12,
+        overlap_minutes=10,
+        effective_from=datetime(2026, 6, 1, tzinfo=UTC),
+        expected_version=1,
+        actor="admin.user",
+    )
+    assert uow.audit.entries[0].entity_id == "__plant__"
 
 
 async def test_list_and_get_shift_configuration(uow):

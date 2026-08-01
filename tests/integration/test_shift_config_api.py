@@ -159,6 +159,19 @@ async def test_post_retro_dated_effective_from_is_conflict(client):
     assert resp.status_code == 409
 
 
+async def test_history_is_empty_under_memory_backend(client):
+    resp = await client.get("/api/v1/admin/config/shift/history", headers={"Authorization": ADMIN})
+    assert resp.status_code == 200
+    assert resp.json()["data"] == []
+
+
+async def test_history_as_operator_is_forbidden(client):
+    resp = await client.get(
+        "/api/v1/admin/config/shift/history", headers={"Authorization": OPERATOR}
+    )
+    assert resp.status_code == 403
+
+
 async def test_versions_endpoint_lists_newest_first(client):
     await client.post(
         "/api/v1/admin/config/shift",

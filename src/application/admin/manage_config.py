@@ -1,10 +1,11 @@
-"""Admin: shift configuration (US-008 — EP-04, ES-308).
+"""Admin: shift configuration (US-008 — EP-04, ES-308/309/310/311).
 
 Shift configuration is append-only and effective-dated: a change always INSERTs a new
 version, never UPDATEs an existing row (see ``domain/shifts/entities.py``). ``area is
 None`` means plant-wide; version numbering and the "history must move strictly
 forward" rule are both scoped per area, so a plant-wide change and a Train-1-specific
-change track independent version sequences.
+change track independent version sequences. Every mutation is audited in the same
+hash-chained trail as pending-actions and role changes (ES-311).
 """
 
 import uuid
@@ -12,7 +13,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from src.api.errors.exceptions import ConflictError, ValidationError
-from src.application.audit.recorder import AuditRecorder
+from src.application.audit.recorder import AuditEntry, AuditRecorder
 from src.application.shifts.repository import ShiftConfigRepository
 from src.domain.shifts.entities import ShiftConfiguration
 
@@ -23,13 +24,8 @@ class ShiftConfigUnitOfWork(Protocol):
     A structural (``typing.Protocol``) shape rather than an import of the concrete
     infrastructure unit-of-work classes — the application layer must not depend
     outward on infrastructure (clean-architecture dependency rule); both
-    ``SqlShiftConfigUnitOfWork`` and ``MemoryShiftConfigUnitOfWork`` satisfy this shape
-    without inheriting from it. Carries ``audit`` from the start, matching every other
-    mutating aggregate's unit-of-work shape in this codebase (pending actions, roles) —
-    ``create_shift_configuration`` does not use it yet at this stage (ES-308 is the
-    store; audit recording is ES-311), but the transaction boundary itself is a store
-    concern: a write must commit (or roll back) as a whole, which is why this exists
-    even before anything is audited.
+    ``SqlShiftConfigUnitOfWork`` and ``MemoryShiftConfigUnitOfWork`` satisfy this
+    shape without inheriting from it.
     """
 
     shift_configs: ShiftConfigRepository
@@ -108,4 +104,28 @@ async def create_shift_configuration(
             "effective_from for this area."
         )
 
-    return await uow.shift_configs.add(config)
+    stored = await uow.shift_configs.add(config)
+    await uow.audit.record(
+        AuditEntry(
+            actor=actor,
+            action="shift_config.create",
+            entity_type="shift_config",
+            # is not None, not `or`: area="" is a distinct (if unusual) area key from
+            # every other resolution path in this feature (effective_for,
+            # _latest_for_area both use `==`/`is`), so it must not fall into the
+            # plant-wide history bucket.
+            entity_id=area if area is not None else "__plant__",
+            payload={
+                "id": stored.id,
+                "area": stored.area,
+                "start_hour": stored.start_hour,
+                "hours": stored.hours,
+                "overlap_minutes": stored.overlap_minutes,
+                "effective_from": stored.effective_from.isoformat(),
+                "version": stored.version,
+                "expected_version": expected_version,
+                "created_by": stored.created_by,
+            },
+        )
+    )
+    return stored
