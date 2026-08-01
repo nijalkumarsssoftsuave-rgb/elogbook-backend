@@ -22,6 +22,7 @@ from src.api.schemas.pending_action import (
     TransitionRequest,
 )
 from src.application.ai_extraction.extract_candidates import extract_candidate_actions
+from src.application.auth.resolve_permissions import is_in_area_scope
 from src.application.pending_actions.confirm_inclusion import confirm_inclusion
 from src.application.pending_actions.create_action import capture_action
 from src.application.pending_actions.list_actions import get_action, list_actions
@@ -39,11 +40,6 @@ def _cid() -> str:
     return correlation_id_ctx.get()
 
 
-def _in_scope(area: str | None, area_scope: list[str] | None) -> bool:
-    """Full-plant (``area_scope=None``) sees everything; a scoped role only its areas."""
-    return area_scope is None or area in area_scope
-
-
 @router.get("")
 async def list_pending_actions(
     uow: PendingActionUoW,
@@ -59,7 +55,7 @@ async def list_pending_actions(
         uow.actions,
         ActionFilter(status=status, owner=owner, area=area, equipment=equipment, priority=priority),
     )
-    visible = [a for a in actions if _in_scope(a.area, user.area_scope)]
+    visible = [a for a in actions if is_in_area_scope(a.area, user.area_scope)]
     return ok([ActionResponse.of(a).model_dump() for a in visible], correlation_id=_cid())
 
 
@@ -71,7 +67,7 @@ async def get_pending_action(
 ) -> dict:
     """Fetch a single pending action, if it is within the caller's area scope."""
     action = await get_action(uow.actions, action_id)
-    if action is None or not _in_scope(action.area, user.area_scope):
+    if action is None or not is_in_area_scope(action.area, user.area_scope):
         raise NotFoundError(f"Pending action {action_id} was not found.")
     return ok(ActionResponse.of(action).model_dump(), correlation_id=_cid())
 

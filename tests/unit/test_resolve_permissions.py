@@ -4,9 +4,11 @@ Previously only exercised incidentally through auth/admin integration tests; thi
 isolates the union/wildcard/area-scope rules directly, including edge cases (mixed
 area scopes, a role with no permissions) that weren't pinned down anywhere.
 """
+
 from src.application.auth.resolve_permissions import (
     area_scope_for_roles,
     has_permission,
+    is_in_area_scope,
     permissions_for_roles,
 )
 from src.domain.users_roles.entities import Role
@@ -51,3 +53,17 @@ def test_area_scope_for_roles_all_full_plant_is_none():
 
 def test_area_scope_for_roles_empty_list_is_none():
     assert area_scope_for_roles([]) is None
+
+
+def test_is_in_area_scope_full_plant_sees_everything():
+    assert is_in_area_scope("Train 1", None) is True
+    assert is_in_area_scope(None, None) is True
+
+
+def test_is_in_area_scope_scoped_role_only_sees_its_areas():
+    assert is_in_area_scope("Train 1", ["Train 1", "Train 2"]) is True
+    assert is_in_area_scope("Utilities", ["Train 1", "Train 2"]) is False
+
+
+def test_is_in_area_scope_scoped_role_never_sees_unassigned_actions():
+    assert is_in_area_scope(None, ["Train 1"]) is False
