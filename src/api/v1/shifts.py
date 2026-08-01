@@ -6,10 +6,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from src.api.deps import Config, CurrentUser, ShiftConfigRepositoryDep, require_permission
+from src.api.errors.exceptions import NotFoundError
 from src.api.schemas.shift import ShiftContext, ShiftHistoryItem
 from src.application.auth.resolve_permissions import resolve_query_scope, sole_area
 from src.application.shifts.current_shift import resolve_current_shift
-from src.application.shifts.shift_history import ShiftHistoryQuery, list_shift_history
+from src.application.shifts.shift_history import (
+    ShiftHistoryQuery,
+    get_shift_by_id,
+    list_shift_history,
+)
 from src.core.logging import correlation_id_ctx
 from src.core.response import ok
 
@@ -95,9 +100,31 @@ async def current_shift(
 
 
 @router.get("/shifts/{shift_id}")
-async def get_shift(shift_id: str) -> dict:
-    """Return a specific / previous shift.
+async def get_shift(
+    shift_id: str,
+    config: Config,
+    repo: ShiftConfigRepositoryDep,
+    user: CurrentUser,
+    area: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+) -> dict:
+    """Return a single historical (or current) shift by its id (ES-313).
 
-    TODO: read persisted shift records from MS SQL once the persistence layer lands.
+    Uses the same scope enforcement as GET /shifts and GET /shifts/current. 404 for
+    an unknown or malformed id — never the old always-200 stub.
     """
-    return ok({"shift_id": shift_id, "detail": "not yet implemented"})
+    scope = resolve_query_scope(user.area_scope, area)
+    effective_area = sole_area(scope)
+    result = await get_shift_by_id(repo, config, shift_id, effective_area)
+    if result is None:
+        raise NotFoundError(f"Shift {shift_id} was not found.")
+    shift, resolved_area = result
+    payload = ShiftContext(
+        shift_id=shift.shift_id,
+        label=shift.label,
+        starts_at=shift.starts_at.isoformat(),
+        ends_at=shift.ends_at.isoformat(),
+        overlap_minutes=shift.overlap_minutes,
+        area=resolved_area,
+        scope=scope,
+    )
+    return ok(payload.model_dump(), correlation_id=correlation_id_ctx.get())

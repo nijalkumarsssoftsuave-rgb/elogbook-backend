@@ -12,7 +12,11 @@ import pytest
 
 from src.api.errors.exceptions import ValidationError
 from src.application.shifts.repository import ShiftConfigRepository
-from src.application.shifts.shift_history import ShiftHistoryQuery, list_shift_history
+from src.application.shifts.shift_history import (
+    ShiftHistoryQuery,
+    get_shift_by_id,
+    list_shift_history,
+)
 from src.core.config import Settings
 from src.domain.shifts.entities import ShiftConfiguration, enumerate_shifts, parse_shift_id
 
@@ -396,3 +400,49 @@ async def test_list_shift_history_filters_by_area():
     )
     items = await list_shift_history(repo, _settings(), query)
     assert all(a == "Train 1" or a is None for _, a in items)
+
+
+# --- get_shift_by_id (ES-313) -----------------------------------------------------------
+
+
+async def test_get_shift_by_id_matches_list_enumeration():
+    repo = _FakeShiftConfigRepository([make_config()])
+    result = await get_shift_by_id(repo, _settings(), "20260730-D", None)
+    assert result is not None
+    shift, resolved_area = result
+    assert shift.shift_id == "20260730-D"
+    assert resolved_area is None
+
+
+async def test_get_shift_by_id_returns_none_for_unknown_or_malformed_ids():
+    repo = _FakeShiftConfigRepository([make_config()])
+    assert await get_shift_by_id(repo, _settings(), "20260730-X", None) is None  # no such window
+    assert await get_shift_by_id(repo, _settings(), "garbage", None) is None
+
+
+async def test_get_shift_by_id_matches_list_enumeration_across_config_change():
+    """The by-id lookup must agree with what a list query covering the same day would
+    have returned, even when a config change happened partway through that day.
+    """
+    plant_v1 = make_config(effective_from=BASE_TIME, start_hour=6, hours=12, version=1)
+    plant_v2 = make_config(
+        effective_from=datetime(2026, 7, 30, 15, 0, tzinfo=UTC), start_hour=8, hours=12, version=2
+    )
+    repo = _FakeShiftConfigRepository([plant_v1, plant_v2])
+
+    listed = await list_shift_history(
+        repo, _settings(), ShiftHistoryQuery(date_from=date(2026, 7, 30), date_to=date(2026, 7, 30))
+    )
+    for shift, resolved_area in listed:
+        looked_up = await get_shift_by_id(repo, _settings(), shift.shift_id, None)
+        assert looked_up == (shift, resolved_area)
+
+
+async def test_get_shift_by_id_resolves_area_specific_configuration():
+    train1 = make_config(area="Train 1", start_hour=8, hours=8, version=1)
+    repo = _FakeShiftConfigRepository([train1])
+    result = await get_shift_by_id(repo, _settings(), "20260730-S1", "Train 1")
+    assert result is not None
+    shift, resolved_area = result
+    assert resolved_area == "Train 1"
+    assert shift.starts_at.hour == 8
