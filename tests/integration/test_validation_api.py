@@ -338,13 +338,13 @@ async def test_role_permissions_empty_list_returns_422(client):
     assert resp.status_code == 422
 
 
-async def test_role_permission_wildcard_valid(client):
+async def test_role_permission_wildcard_rejected_by_catalogue(client):
     resp = await client.post(
         "/api/v1/admin/roles",
         json=_valid_role_body(permissions=["*"]),
         headers={"Authorization": ADMIN},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------

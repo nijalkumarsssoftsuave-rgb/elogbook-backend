@@ -188,9 +188,9 @@ def test_role_name_with_hyphen_fails():
 # ---------------------------------------------------------------------------
 
 
-def test_permission_wildcard_valid():
-    r = CreateRoleRequest(name="myrole", permissions=["*"], ad_groups=["GRP"])
-    assert r.permissions == ["*"]
+def test_permission_wildcard_rejected_by_catalogue():
+    with pytest.raises(PydanticValidationError):
+        CreateRoleRequest(name="myrole", permissions=["*"], ad_groups=["GRP"])
 
 
 def test_permission_resource_action_valid():
@@ -221,18 +221,20 @@ def test_permissions_list_empty_fails():
 
 
 def test_ad_groups_valid():
-    r = CreateRoleRequest(name="myrole", permissions=["*"], ad_groups=["GRP-OPS", "GRP-SUP"])
+    r = CreateRoleRequest(
+        name="myrole", permissions=["user:read"], ad_groups=["GRP-OPS", "GRP-SUP"]
+    )
     assert len(r.ad_groups) == 2
 
 
 def test_ad_groups_empty_string_member_fails():
     with pytest.raises(PydanticValidationError):
-        CreateRoleRequest(name="myrole", permissions=["*"], ad_groups=[""])
+        CreateRoleRequest(name="myrole", permissions=["user:read"], ad_groups=[""])
 
 
 def test_ad_groups_list_empty_fails():
     with pytest.raises(PydanticValidationError):
-        CreateRoleRequest(name="myrole", permissions=["*"], ad_groups=[])
+        CreateRoleRequest(name="myrole", permissions=["user:read"], ad_groups=[])
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from src.application.admin.manage_roles import GroupRoleMapping
 from src.domain.users_roles.entities import Role
+from src.domain.users_roles.permissions import VALID_PERMISSIONS
 
 _ROLE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 _PERMISSION_RE = re.compile(r"^([a-z_]+:[a-z_]+|\*)$")
@@ -39,6 +40,11 @@ class CreateRoleRequest(BaseModel):
                 raise ValueError(
                     f"Permission '{p}' must be '*' or in 'resource:action' format "
                     f"(e.g. 'user:read')."
+                )
+            if p not in VALID_PERMISSIONS:
+                raise ValueError(
+                    f"'{p}' is not a recognised permission. "
+                    f"See GET /api/v1/admin/permissions for the catalogue."
                 )
         return v
 
@@ -86,6 +92,11 @@ class UpdateRoleRequest(BaseModel):
                 raise ValueError(
                     f"Permission '{p}' must be '*' or in 'resource:action' format "
                     f"(e.g. 'user:read')."
+                )
+            if p not in VALID_PERMISSIONS:
+                raise ValueError(
+                    f"'{p}' is not a recognised permission. "
+                    f"See GET /api/v1/admin/permissions for the catalogue."
                 )
         return v
 

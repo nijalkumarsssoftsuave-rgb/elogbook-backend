@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends
 
 from src.api.deps import AuditReaderDep, RoleRepositoryDep, RoleUoW, UserUoW, require_permission
 from src.api.schemas.audit import AuditEntryResponse
+from src.api.schemas.permission import PermissionEntryResponse
 from src.api.schemas.role import (
     CreateRoleRequest,
     RoleMappingEntryResponse,
@@ -34,6 +35,7 @@ from src.application.admin.manage_users import (
 )
 from src.core.logging import correlation_id_ctx
 from src.core.response import ok
+from src.domain.users_roles.permissions import PERMISSION_CATALOGUE
 from src.infrastructure.auth.token_validator import Principal
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -41,6 +43,20 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 def _cid() -> str:
     return correlation_id_ctx.get()
+
+
+@router.get("/permissions", dependencies=[Depends(require_permission("role:read"))])
+async def list_permissions_endpoint() -> dict:
+    """List every selectable module permission for the permission catalogue.
+
+    Used by the UI to populate the permission picker when creating or editing a
+    custom role. The wildcard ``*`` is excluded — it is reserved for the built-in
+    administrator role and cannot be assigned to custom roles.
+    """
+    return ok(
+        [PermissionEntryResponse.of(e).model_dump() for e in PERMISSION_CATALOGUE],
+        correlation_id=_cid(),
+    )
 
 
 @router.get("/roles", dependencies=[Depends(require_permission("role:read"))])
