@@ -38,3 +38,6 @@ class InMemoryUserRepository(UserRepository):
 
     async def delete(self, user_id: str) -> None:
         self._items.pop(user_id, None)
+
+    async def count_by_role_id(self, role_id: str) -> int:
+        return sum(1 for u in self._items.values() if u.role_id == role_id)

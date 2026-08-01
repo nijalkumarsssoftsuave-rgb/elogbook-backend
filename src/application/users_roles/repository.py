@@ -58,3 +58,8 @@ class UserRepository(ABC):
 
     @abstractmethod
     async def delete(self, user_id: str) -> None: ...
+
+    @abstractmethod
+    async def count_by_role_id(self, role_id: str) -> int:
+        """How many users currently have this role assigned (used for delete-conflict guard)."""
+        ...

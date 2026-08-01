@@ -6,12 +6,17 @@ resolution at sign-in; omitting it means the user's role comes from their AD gro
 normal.
 """
 
-from src.api.errors.exceptions import ConflictError, NotFoundError
+from src.api.errors.exceptions import ConflictError, NotFoundError, ValidationError
 from src.application.audit.recorder import AuditEntry, AuditRecorder
-from src.application.users_roles.repository import UserRepository
+from src.application.users_roles.repository import RoleRepository, UserRepository
 from src.domain.users_roles.entities import User
 
 _UNSET = object()  # sentinel — distinguishes "not passed" from explicit None
+
+
+async def _assert_role_exists(role_repo: RoleRepository, role_id: str) -> None:
+    if await role_repo.get(role_id) is None:
+        raise ValidationError(f"Role '{role_id}' does not exist.")
 
 
 async def list_users(repo: UserRepository) -> list[User]:
@@ -32,9 +37,12 @@ async def create_user(
     display_name: str,
     email: str,
     role_id: str | None = None,
+    role_repo: RoleRepository | None = None,
     audit: AuditRecorder | None = None,
     actor: str = "system",
 ) -> User:
+    if role_id is not None and role_repo is not None:
+        await _assert_role_exists(role_repo, role_id)
     existing = await repo.get_by_username(username)
     if existing is not None:
         raise ConflictError(f"A user with username '{username}' already exists.")
@@ -66,10 +74,13 @@ async def update_user(
     email: str | None = None,
     role_id: object = _UNSET,
     is_active: bool | None = None,
+    role_repo: RoleRepository | None = None,
     audit: AuditRecorder | None = None,
     actor: str = "system",
 ) -> User:
     """Update an existing user. Pass ``role_id=None`` to explicitly clear the override."""
+    if role_id is not _UNSET and role_id is not None and role_repo is not None:
+        await _assert_role_exists(role_repo, role_id)  # type: ignore[arg-type]
     user = await repo.get(user_id)
     if user is None:
         raise NotFoundError(f"User {user_id} was not found.")

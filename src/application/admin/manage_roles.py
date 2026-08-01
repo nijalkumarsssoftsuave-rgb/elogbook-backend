@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from src.api.errors.exceptions import ConflictError, NotFoundError
 from src.application.audit.recorder import AuditEntry, AuditRecorder
-from src.application.users_roles.repository import RoleRepository
+from src.application.users_roles.repository import RoleRepository, UserRepository
 from src.domain.users_roles.entities import Role
 
 
@@ -150,6 +150,7 @@ async def delete_custom_role(
     repo: RoleRepository,
     role_id: str,
     *,
+    user_repo: UserRepository | None = None,
     audit: AuditRecorder | None = None,
     actor: str = "system",
 ) -> None:
@@ -158,6 +159,12 @@ async def delete_custom_role(
         raise NotFoundError(f"Role {role_id} was not found.")
     if not role.is_custom:
         raise ConflictError("Base roles cannot be deleted.")
+    if user_repo is not None:
+        count = await user_repo.count_by_role_id(role_id)
+        if count > 0:
+            raise ConflictError(
+                f"Role '{role.name}' has {count} user(s) assigned — unassign them first."
+            )
     await repo.delete(role_id)
     if audit is not None:
         await audit.record(

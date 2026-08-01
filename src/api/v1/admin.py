@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from src.api.deps import AuditReaderDep, RoleUoW, UserUoW, require_permission
+from src.api.deps import AuditReaderDep, RoleRepositoryDep, RoleUoW, UserUoW, require_permission
 from src.api.schemas.audit import AuditEntryResponse
 from src.api.schemas.role import (
     CreateRoleRequest,
@@ -122,10 +122,13 @@ async def update_role(
 async def delete_role(
     role_id: str,
     uow: RoleUoW,
+    user_uow: UserUoW,
     user: Annotated[Principal, Depends(require_permission("role:manage"))],
 ) -> dict:
-    """Delete a custom role. Base roles cannot be deleted (409)."""
-    await delete_custom_role(uow.roles, role_id, audit=uow.audit, actor=user.username)
+    """Delete a custom role. Base roles cannot be deleted (409). Fails (409) if users are assigned."""
+    await delete_custom_role(
+        uow.roles, role_id, user_repo=user_uow.users, audit=uow.audit, actor=user.username
+    )
     return ok({"deleted": role_id}, correlation_id=_cid())
 
 
@@ -152,6 +155,7 @@ async def get_user_endpoint(user_id: str, uow: UserUoW) -> dict:
 async def create_user_endpoint(
     body: CreateUserRequest,
     uow: UserUoW,
+    role_repo: RoleRepositoryDep,
     actor: Annotated[Principal, Depends(require_permission("user:manage"))],
 ) -> dict:
     """Provision a new user, optionally with a manual role override."""
@@ -161,6 +165,7 @@ async def create_user_endpoint(
         display_name=body.display_name,
         email=body.email,
         role_id=body.role_id,
+        role_repo=role_repo,
         audit=uow.audit,
         actor=actor.username,
     )
@@ -172,6 +177,7 @@ async def update_user_endpoint(
     user_id: str,
     body: UpdateUserRequest,
     uow: UserUoW,
+    role_repo: RoleRepositoryDep,
     actor: Annotated[Principal, Depends(require_permission("user:manage"))],
 ) -> dict:
     """Update a user. Pass ``clear_role: true`` to remove the manual role override."""
@@ -187,6 +193,7 @@ async def update_user_endpoint(
         display_name=body.display_name,
         email=body.email,
         is_active=body.is_active,
+        role_repo=role_repo,
         audit=uow.audit,
         actor=actor.username,
         **role_id_kwarg,

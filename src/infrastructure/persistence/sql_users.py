@@ -7,7 +7,7 @@ transaction.
 
 from typing import Any
 
-from sqlalchemy import Row, delete, insert, select, update
+from sqlalchemy import Row, delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.users_roles.repository import UserRepository
@@ -78,3 +78,9 @@ class SqlUserRepository(UserRepository):
 
     async def delete(self, user_id: str) -> None:
         await self._session.execute(delete(users).where(users.c.id == user_id))
+
+    async def count_by_role_id(self, role_id: str) -> int:
+        result = await self._session.execute(
+            select(func.count()).select_from(users).where(users.c.role_id == role_id)
+        )
+        return result.scalar_one_or_none() or 0
