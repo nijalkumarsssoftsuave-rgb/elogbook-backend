@@ -1,13 +1,13 @@
 """Shift-context endpoints."""
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 
 from src.api.deps import Config, CurrentUser, ShiftConfigRepositoryDep, require_permission
 from src.api.errors.exceptions import NotFoundError
-from src.api.schemas.shift import ShiftContext, ShiftHistoryItem
+from src.api.schemas.shift import ShiftContext, ShiftHistoryItem, ShiftHistoryResponse
 from src.application.auth.resolve_permissions import resolve_query_scope, sole_area
 from src.application.shifts.current_shift import resolve_current_shift
 from src.application.shifts.shift_history import (
@@ -29,15 +29,19 @@ async def list_shifts(
     date_from: Annotated[date, Query()],
     date_to: Annotated[date, Query()],
     area: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int | None, Query(ge=1)] = None,
+    sort: Annotated[Literal["starts_at:asc", "starts_at:desc"], Query()] = "starts_at:desc",
 ) -> dict:
-    """List shift windows in [date_from, date_to] (inclusive, UTC calendar dates).
+    """List shift windows in [date_from, date_to] (inclusive, UTC calendar dates), paginated.
 
     Windows are derived on every request from the versioned shift configuration
     (ES-308) — no separate shift-history table. Uses the SAME scope enforcement as
     GET /shifts/current (resolve_query_scope + sole_area) — an out-of-scope ?area= is
-    403, identical semantics, not a parallel reimplementation. Unpaged for now
-    (ES-314 adds pagination and sort); large ranges are bounded by
-    ``shift_history_max_range_days`` (422 if exceeded).
+    403, identical semantics, not a parallel reimplementation. Large ranges are bounded
+    by ``shift_history_max_range_days`` (422 if exceeded); ``page_size`` by
+    ``shift_history_page_size_max`` (422 if exceeded, ``shift_history_page_size_default``
+    if omitted).
 
     A shift that *starts* before ``date_from`` is never returned, even if it's still in
     progress and overlaps ``date_from`` for part of its duration — only shifts whose own
@@ -49,9 +53,16 @@ async def list_shifts(
     """
     scope = resolve_query_scope(user.area_scope, area)
     effective_area = sole_area(scope)
-    query = ShiftHistoryQuery(date_from=date_from, date_to=date_to, area=effective_area)
-    items = await list_shift_history(repo, config, query)
-    payload = [
+    query = ShiftHistoryQuery(
+        date_from=date_from,
+        date_to=date_to,
+        area=effective_area,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+    )
+    result = await list_shift_history(repo, config, query)
+    items = [
         ShiftHistoryItem(
             shift_id=s.shift_id,
             label=s.label,
@@ -59,10 +70,19 @@ async def list_shifts(
             ends_at=s.ends_at.isoformat(),
             overlap_minutes=s.overlap_minutes,
             area=resolved_area,
-        ).model_dump()
-        for s, resolved_area in items
+        )
+        for s, resolved_area in result.items
     ]
-    return ok(payload, correlation_id=correlation_id_ctx.get())
+    payload = ShiftHistoryResponse(
+        items=items,
+        page=result.page,
+        page_size=result.page_size,
+        total=result.total,
+        total_pages=result.total_pages,
+        sort=result.sort,
+        scope=scope,
+    )
+    return ok(payload.model_dump(), correlation_id=correlation_id_ctx.get())
 
 
 @router.get("/shifts/current")

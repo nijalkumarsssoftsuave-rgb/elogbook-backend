@@ -82,8 +82,9 @@ under `sql` it's a real `auth.signin.success` / `auth.signin.denied` row in `aud
 | `GET /api/v1/health`, `/ready` | ✅ working |
 | `POST /api/v1/dev/token` | ✅ working (stub-mode only — mints a signed dev JWT) |
 | `GET /api/v1/me` | ✅ working (real JWT validation, roles/permissions/area-scope from `roles` table) |
+| `GET /api/v1/shifts` (date-range history, paginated + sorted) | ✅ working (ES-312/314) |
 | `GET /api/v1/shifts/current` | ✅ working |
-| `GET /api/v1/shifts/{id}` | stub — persistence TODO |
+| `GET /api/v1/shifts/{id}` | ✅ working (ES-313) |
 | `GET /api/v1/pending-actions` (list + filters) | ✅ working (in-memory or SQL, area-scope filtered) |
 | `GET /api/v1/pending-actions/{id}` | ✅ working (area-scope filtered) |
 | `POST /api/v1/pending-actions` (capture) | ✅ working (audited) |

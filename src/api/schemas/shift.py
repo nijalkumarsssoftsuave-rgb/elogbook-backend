@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel
 
+from src.api.schemas.common import Page
+
 
 class ShiftHistoryItem(BaseModel):
     """One shift window, as returned by the history list endpoint (US-009 ES-312)."""
@@ -22,4 +24,10 @@ class ShiftContext(ShiftHistoryItem):
     # The *effective per-request* data scope, NOT the role's static area_scope already
     # exposed elsewhere (e.g. GET /me) — same shape, different meaning: this one
     # reflects this specific request's caller, not a general role property.
+    scope: list[str] | None = None
+
+
+class ShiftHistoryResponse(Page[ShiftHistoryItem]):
+    """The paginated payload returned by ``GET /shifts`` (US-009 ES-314)."""
+
     scope: list[str] | None = None
