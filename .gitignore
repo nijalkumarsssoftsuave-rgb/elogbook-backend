@@ -1,0 +1,61 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# --- Packaging / build ---
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Secrets / local config (never commit real values) ---
+.env
+.env.*
+!.env.example
+.devkeys/
+
+# --- Local databases (dev-only SQLite, never real data) ---
+*.db
+*.sqlite
+*.sqlite3
+elogbook_local.db
+
+# --- Test / lint / type-check caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+
+# --- Runtime logs ---
+*.log
+uvicorn_*.log
+
+# --- IDE / editor ---
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- GitNexus (local code-intelligence index + per-project skill cache; regenerate with
+# `gitnexus analyze` / `gitnexus setup` — machine-specific, not project source) ---
+.gitnexus/
+.claude/skills/gitnexus/
+CLAUDE.md
+AGENTS.md
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db

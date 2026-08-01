@@ -1,0 +1,42 @@
+# Local development stack — Engineering Code Standards, discipline 4.
+#
+# Brings up the stateful dependencies (MS SQL + Valkey) so `ELOG_PERSISTENCE_BACKEND=sql`
+# and cache-backed code can be exercised without a shared environment. There is no
+# separate stub-issuer service here: elogbook-backend's dev auth (`POST /dev/token`,
+# `src/infrastructure/auth/dev_issuer.py`) runs in-process inside the app itself, unlike
+# Tender's out-of-process `tools/stub_idp` — see the folder-structure standard doc for
+# why that piece is a documented exception rather than a separate container.
+#
+# If you already have a native local SQL Server instance (see scripts/setup_mssql.py),
+# skip the `mssql` service and point `.env`'s ELOG_DATABASE_URL at that instead.
+
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Local_dev_pw1"
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+
+  valkey:
+    image: valkey/valkey:7-alpine
+    ports:
+      - "6379:6379"
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file:
+      - ../.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mssql
+      - valkey
+
+volumes:
+  mssql-data:

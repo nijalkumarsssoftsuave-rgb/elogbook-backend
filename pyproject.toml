@@ -1,0 +1,55 @@
+[project]
+name = "elogbook-backend"
+version = "0.1.0"
+description = "OLNG E-Logbook — backend service (system of record)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "sqlalchemy[asyncio]>=2.0",
+    "greenlet>=3.0",           # required by SQLAlchemy's asyncio bridge
+    "pyjwt[crypto]>=2.8",      # RS256 JWT validation — same library used for real AD FS tokens
+]
+
+[project.optional-dependencies]
+# The production MS SQL async driver. Needs the ODBC Driver 18 system package, so it is
+# an explicit extra rather than a hard dependency (kept out of laptop/CI installs).
+mssql = [
+    "aioodbc>=0.5",
+    "pyodbc>=5.1",
+]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "httpx>=0.27",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "aiosqlite>=0.20",         # async SQLite for the SQL-backend tests (no server needed)
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Engineering Code Standards: lint style, unused code, unsafe patterns, complexity
+select = ["E", "F", "I", "B", "UP", "S", "C90"]
+ignore = ["S101"]  # allow assert in tests
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.coverage.report]
+# Engineering Code Standards, discipline 3: >=80% unit, >=90% critical, gated in CI
+fail_under = 80
