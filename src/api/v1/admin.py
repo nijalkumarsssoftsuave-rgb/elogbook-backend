@@ -137,6 +137,18 @@ async def delete_role(
 # ---------------------------------------------------------------------------
 
 
+@router.get("/users/{user_id}/history", dependencies=[Depends(require_permission("user:read"))])
+async def user_history_endpoint(user_id: str, reader: AuditReaderDep) -> dict:
+    """The admin user record's change history, most recent first.
+
+    Not gated on the user currently existing — a deleted user's history is still
+    auditable governance data and stays readable. An unknown ``user_id`` simply yields
+    an empty list.
+    """
+    entries = await reader.list_for_entity("user", user_id)
+    return ok([AuditEntryResponse.of(e).model_dump() for e in entries], correlation_id=_cid())
+
+
 @router.get("/users", dependencies=[Depends(require_permission("user:read"))])
 async def list_users_endpoint(uow: UserUoW) -> dict:
     """List all admin-provisioned users."""
