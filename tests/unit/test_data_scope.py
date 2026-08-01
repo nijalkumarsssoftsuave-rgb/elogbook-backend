@@ -1,12 +1,14 @@
 """Unit tests for the area data-scope value object and its application-layer helper
-(US-007 ES-305: full-plant default scope).
+(US-007 ES-305/306: default scope + narrowing by requested area).
 
-Pure logic, no I/O — mirrors the style of ``test_resolve_permissions.py``. Narrowing to
-a specific requested area (``?area=``) is ES-306 and is tested there once it exists.
+Pure logic, no I/O — mirrors the style of ``test_resolve_permissions.py``.
 """
 
 import dataclasses
 
+import pytest
+
+from src.api.errors.exceptions import ForbiddenError
 from src.application.auth.resolve_permissions import area_scope_for_roles, resolve_query_scope
 from src.domain.users_roles.entities import Role
 from src.domain.users_roles.permissions import AreaScope
@@ -69,7 +71,26 @@ def test_area_scope_is_frozen_and_hashable():
     assert {scope, AreaScope.of(["Train 1"])} == {scope}
 
 
-# --- resolve_query_scope (default, no narrowing yet) --------------------------------
+def test_narrowed_to_in_scope_returns_single_area_scope():
+    scope = AreaScope.of(["Train 1", "Train 2"])
+    narrowed = scope.narrowed_to("Train 1")
+    assert narrowed is not None
+    assert narrowed.areas == ("Train 1",)
+
+
+def test_narrowed_to_out_of_scope_returns_none_not_exception():
+    scope = AreaScope.of(["Train 1"])
+    assert scope.narrowed_to("Train 2") is None
+
+
+def test_narrowed_to_from_full_plant_returns_requested_area():
+    scope = AreaScope.of(None)
+    narrowed = scope.narrowed_to("Train 1")
+    assert narrowed is not None
+    assert narrowed.areas == ("Train 1",)
+
+
+# --- resolve_query_scope, default (ES-305) -------------------------------------------
 
 
 def test_resolve_query_scope_full_plant_returns_none():
@@ -93,3 +114,50 @@ def test_resolve_query_scope_multi_role_union_of_two_scoped_roles():
     unioned = area_scope_for_roles(roles)
     assert unioned == ["Train 1", "Train 2"]
     assert resolve_query_scope(unioned) == ["Train 1", "Train 2"]
+
+
+# --- resolve_query_scope, narrowing (ES-306) ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "area_scope, requested_area, expected",
+    [
+        (None, None, None),
+        (None, "Train 1", ["Train 1"]),
+        (["Train 1"], None, ["Train 1"]),
+        (["Train 1"], "Train 1", ["Train 1"]),
+        (["T1", "T2"], None, ["T1", "T2"]),
+    ],
+)
+def test_resolve_query_scope_truth_table(area_scope, requested_area, expected):
+    assert resolve_query_scope(area_scope, requested_area) == expected
+
+
+def test_resolve_query_scope_out_of_scope_raises_forbidden():
+    with pytest.raises(ForbiddenError) as exc_info:
+        resolve_query_scope(["Train 1"], "Train 2")
+    assert exc_info.value.status_code == 403
+
+
+def test_resolve_query_scope_is_case_sensitive():
+    with pytest.raises(ForbiddenError):
+        resolve_query_scope(["Train 1"], "train 1")
+
+
+def test_resolve_query_scope_multi_role_union_then_narrow():
+    """Union two scoped roles via area_scope_for_roles, then resolve a request scope."""
+    roles = [_role(area_scope=["Train 1"]), _role(area_scope=["Train 2"])]
+    unioned = area_scope_for_roles(roles)
+    assert unioned == ["Train 1", "Train 2"]
+
+    assert resolve_query_scope(unioned, None) == ["Train 1", "Train 2"]
+    assert resolve_query_scope(unioned, "Train 1") == ["Train 1"]
+    with pytest.raises(ForbiddenError):
+        resolve_query_scope(unioned, "Train 3")
+
+
+def test_resolve_query_scope_multi_role_union_with_full_plant_role_is_unrestricted():
+    roles = [_role(area_scope=["Train 1"]), _role(area_scope=None)]
+    unioned = area_scope_for_roles(roles)
+    assert unioned is None
+    assert resolve_query_scope(unioned, "Anywhere") == ["Anywhere"]
