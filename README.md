@@ -98,6 +98,15 @@ correlation-ID middleware, structured logging, token validation + RBAC dependenc
 the repository pattern with dependency injection. Adapters for Valkey, ai-service and SMTP
 are scaffolded and stubbed.
 
+**Shift resolution is a shared contract (ES-310).** `resolve_current_shift()`
+(`src/application/shifts/current_shift.py`) is the one place "what shift covers this
+moment" is computed — `GET /shifts/current` calls it, and it is the entry point any
+future consumer (shift summaries, scheduled reports) must also call rather than
+re-deriving shift windows independently, so every part of the system stays consistent
+with whatever the shift configuration currently says. Don't call the similarly-named
+`get_current_shift()` in the same module instead — it's a bootstrap-only fallback that
+reads static `Settings` and never looks at the persisted configuration at all.
+
 **Persistence is real.** The pending-action repository has both a **working in-memory
 adapter** (default, no server) and a **SQLAlchemy 2.0 async adapter** behind the same
 port — MS SQL via `aioodbc` in the deployed environments, SQLite via `aiosqlite` for
