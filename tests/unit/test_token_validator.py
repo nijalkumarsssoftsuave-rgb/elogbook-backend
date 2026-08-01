@@ -115,6 +115,44 @@ async def test_area_scoped_custom_role_narrows_area_scope(role_repo):
     assert principal.area_scope == ["Train 1"]
 
 
+# ES-364: custom roles resolved identically to base roles
+
+
+async def test_user_with_base_and_custom_role_gets_union_of_permissions(role_repo):
+    custom = Role.create_custom(
+        "area_analyst",
+        permissions=["analytics:read"],
+        ad_groups=["ANALYTICS-GROUP"],
+    )
+    await role_repo.add(custom)
+    token, _ = dev_issuer.mint_token(
+        get_settings(),
+        username="multi.role",
+        groups=["OLNG-ELOG-OPERATORS", "ANALYTICS-GROUP"],
+    )
+    principal = await token_validator.validate_token(f"Bearer {token}", role_repo)
+    assert "action:read" in principal.permissions  # from base operator
+    assert "analytics:read" in principal.permissions  # from custom role
+    assert set(principal.roles) == {"operator", "area_analyst"}
+
+
+async def test_base_full_plant_role_beats_custom_area_scope(role_repo):
+    scoped_custom = Role.create_custom(
+        "train1_op",
+        permissions=["action:read"],
+        ad_groups=["TRAIN1-GROUP"],
+        area_scope=["Train 1"],
+    )
+    await role_repo.add(scoped_custom)
+    token, _ = dev_issuer.mint_token(
+        get_settings(),
+        username="wide.user",
+        groups=["OLNG-ELOG-OPERATORS", "TRAIN1-GROUP"],
+    )
+    principal = await token_validator.validate_token(f"Bearer {token}", role_repo)
+    assert principal.area_scope is None  # base operator is full-plant -> overrides scoped custom
+
+
 async def test_missing_authorization_header_is_unauthorized(role_repo):
     with pytest.raises(UnauthorizedError):
         await token_validator.validate_token(None, role_repo)
