@@ -7,9 +7,15 @@ own accepted candidate fields come back in, a real ``PendingAction`` is created 
 ``source`` forced to ``ai`` (never caller-controlled — that's the whole point of this
 endpoint existing separately from plain capture), and the audit trail records the
 inclusion decision distinctly from an ordinary manual capture.
+
+Persist-and-audit is identical to ``capture_action`` in every way except the forced
+``source`` and the audit event name, so this delegates to it rather than duplicating the
+create/persist/audit-payload shape — a future change to that shape (a new field, a
+different payload key) only needs to happen once.
 """
 
-from src.application.audit.recorder import AuditEntry, AuditRecorder
+from src.application.audit.recorder import AuditRecorder
+from src.application.pending_actions.create_action import capture_action
 from src.application.pending_actions.repository import PendingActionRepository
 from src.domain.pending_actions.entities import PendingAction, Priority, Source
 
@@ -24,29 +30,14 @@ async def confirm_inclusion(
     actor: str = "system",
 ) -> PendingAction:
     """Persist a Supervisor-confirmed, AI-sourced candidate as a real pending action."""
-    action = PendingAction.create(
+    return await capture_action(
+        repo,
         issue=issue,
         priority=priority,
         source=Source.AI_EXTRACTED,
         area=area,
         equipment=equipment,
+        audit=audit,
+        actor=actor,
+        audit_action="pending_action.confirm_inclusion",
     )
-    stored = await repo.add(action)
-    if audit is not None:
-        await audit.record(
-            AuditEntry(
-                actor=actor,
-                action="pending_action.confirm_inclusion",
-                entity_type="pending_action",
-                entity_id=stored.id,
-                payload={
-                    "issue": stored.issue,
-                    "priority": stored.priority.value,
-                    "status": stored.status.value,
-                    "source": stored.source.value,
-                    "area": stored.area,
-                    "equipment": stored.equipment,
-                },
-            )
-        )
-    return stored
