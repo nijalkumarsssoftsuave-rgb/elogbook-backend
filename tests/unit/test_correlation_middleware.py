@@ -5,6 +5,7 @@ isolates the middleware's own behavior — honouring a caller-supplied id vs. ge
 one, and always echoing it back on the response header, which was never asserted
 in isolation before.
 """
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 

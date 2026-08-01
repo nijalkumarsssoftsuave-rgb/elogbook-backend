@@ -16,6 +16,20 @@ async def list_roles(repo: RoleRepository) -> list[Role]:
     return await repo.list_all()
 
 
+async def list_known_areas(repo: RoleRepository) -> list[str]:
+    """Return every distinct area name in use across all roles, sorted alphabetically.
+
+    Derived dynamically from stored roles so the list stays accurate without
+    any extra configuration. Returns an empty list when no scoped roles exist yet.
+    """
+    roles = await repo.list_all()
+    areas: set[str] = set()
+    for role in roles:
+        if role.area_scope:
+            areas.update(role.area_scope)
+    return sorted(areas)
+
+
 @dataclass(frozen=True)
 class GroupRoleMapping:
     """One AD group's mapping to a role — the flat, administration-screen view.

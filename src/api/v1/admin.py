@@ -21,6 +21,7 @@ from src.application.admin.manage_roles import (
     create_custom_role,
     delete_custom_role,
     get_group_role_mapping,
+    list_known_areas,
     list_roles,
     update_custom_role,
 )
@@ -33,6 +34,18 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 def _cid() -> str:
     return correlation_id_ctx.get()
+
+
+@router.get("/areas", dependencies=[Depends(require_permission("role:read"))])
+async def list_areas_endpoint(uow: RoleUoW) -> dict:
+    """List every distinct area name currently in use across all roles, sorted alphabetically.
+
+    Used by the UI to populate the area-scope picker when creating or editing a scoped
+    role. Returns an empty list when no scoped roles exist yet — the list grows
+    automatically as administrators create area-restricted roles.
+    """
+    areas = await list_known_areas(uow.roles)
+    return ok(areas, correlation_id=_cid())
 
 
 @router.get("/roles", dependencies=[Depends(require_permission("role:read"))])
