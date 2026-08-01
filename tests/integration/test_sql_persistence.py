@@ -203,11 +203,16 @@ async def test_list_filters(sessionmaker):
             area="Utilities",
             audit=uow.audit,
         )
+        await confirm_inclusion(
+            uow.actions, issue="c", priority=Priority.LOW, area="Utilities", audit=uow.audit
+        )
 
     async with SqlUnitOfWork(sessionmaker) as uow:
         train1 = await list_actions(uow.actions, ActionFilter(area="Train 1"))
         high = await list_actions(uow.actions, ActionFilter(priority=Priority.HIGH))
         all_open = await list_actions(uow.actions, ActionFilter(status=PendingActionStatus.OPEN))
+        ai_sourced = await list_actions(uow.actions, ActionFilter(source=Source.AI_EXTRACTED))
     assert [a.issue for a in train1] == ["a"]
     assert [a.issue for a in high] == ["a"]
-    assert len(all_open) == 2
+    assert len(all_open) == 3
+    assert [a.issue for a in ai_sourced] == ["c"]
