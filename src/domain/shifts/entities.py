@@ -27,8 +27,8 @@ class Shift:
     def resolve(now: datetime, start_hour: int, hours: int, overlap_minutes: int) -> "Shift":
         """Resolve which shift ``now`` falls into, given the shift configuration.
 
-        Two shifts per day for a 12-hour period: Day starts at ``start_hour``, Night
-        ``hours`` later. Pure function — deterministic and unit-testable without a clock.
+        ``hours`` divides each day into ``24 / hours`` equal windows starting at
+        ``start_hour``. Pure function — deterministic and unit-testable without a clock.
         """
         day_start = datetime.combine(now.date(), time(hour=start_hour), tzinfo=now.tzinfo)
 
@@ -42,8 +42,20 @@ class Shift:
         index = int(elapsed.total_seconds() // (hours * 3600))
         starts_at = day_start + timedelta(hours=hours * index)
         ends_at = starts_at + timedelta(hours=hours)
-        label = "Day" if starts_at.hour == start_hour else "Night"
-        shift_id = f"{starts_at:%Y%m%d}-{label[0]}"
+
+        if hours == 12:
+            # Preserve the original Day/Night labelling exactly — existing callers and
+            # tests depend on ids shaped like "20260730-D" / "20260730-N".
+            label = "Day" if starts_at.hour == start_hour else "Night"
+            shift_id = f"{starts_at:%Y%m%d}-{label[0]}"
+        else:
+            # Day/Night only makes sense for exactly two windows a day. Once ``hours``
+            # is configurable (ES-308) — e.g. hours=8 -> 3 windows/day — two windows
+            # would collide on the same id under that scheme, so index them instead:
+            # S1, S2, ... Sn. (``index`` already IS the window's position in the day —
+            # no need to re-derive it from ``starts_at.hour``.)
+            label = f"S{index + 1}"
+            shift_id = f"{starts_at:%Y%m%d}-{label}"
 
         return Shift(
             shift_id=shift_id,
@@ -51,6 +63,16 @@ class Shift:
             starts_at=starts_at,
             ends_at=ends_at,
             overlap_minutes=overlap_minutes,
+        )
+
+    @staticmethod
+    def from_config(cfg: "ShiftConfiguration", now: datetime) -> "Shift":
+        """Build the shift window ``now`` falls into from an effective configuration row."""
+        return Shift.resolve(
+            now=now,
+            start_hour=cfg.start_hour,
+            hours=cfg.hours,
+            overlap_minutes=cfg.overlap_minutes,
         )
 
 
