@@ -1,6 +1,6 @@
 """Role request/response schemas (admin role management)."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.application.admin.manage_roles import GroupRoleMapping
 from src.domain.users_roles.entities import Role
@@ -14,6 +14,16 @@ class CreateRoleRequest(BaseModel):
     ad_groups: list[str] = Field(min_length=1)
     area_scope: list[str] | None = None
 
+    @field_validator("area_scope", mode="before")
+    @classmethod
+    def _validate_area_scope(cls, v: list | None) -> list | None:
+        if v is None:
+            return v
+        for a in v:
+            if not isinstance(a, str) or not a.strip():
+                raise ValueError("Each area must be a non-empty string.")
+        return v
+
 
 class UpdateRoleRequest(BaseModel):
     """Update a custom role. Omitted fields are left unchanged."""
@@ -25,6 +35,16 @@ class UpdateRoleRequest(BaseModel):
     clear_area_scope: bool = Field(
         default=False, description="Set true to clear area_scope back to full-plant."
     )
+
+    @field_validator("area_scope", mode="before")
+    @classmethod
+    def _validate_area_scope(cls, v: list | None) -> list | None:
+        if v is None:
+            return v
+        for a in v:
+            if not isinstance(a, str) or not a.strip():
+                raise ValueError("Each area must be a non-empty string.")
+        return v
 
 
 class RoleResponse(BaseModel):

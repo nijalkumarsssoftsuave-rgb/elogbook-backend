@@ -5,6 +5,7 @@ integration tests). Previously 0% covered — nothing exercised ``get_engine``,
 ``get_sessionmaker``, ``dispose_engine`` or ``healthcheck`` directly; the SQL
 integration tests build their own engine instead of going through this module.
 """
+
 import pytest
 
 try:
