@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from src.api.deps import Config, CurrentUser, ShiftConfigRepositoryDep, require_permission
 from src.api.schemas.shift import ShiftContext
-from src.application.auth.resolve_permissions import resolve_query_scope
+from src.application.auth.resolve_permissions import resolve_query_scope, sole_area
 from src.application.shifts.current_shift import resolve_current_shift
 from src.core.logging import correlation_id_ctx
 from src.core.response import ok
@@ -28,10 +28,14 @@ async def current_shift(
     ``scope`` reports the caller's data-visibility restriction: ``None`` by default for
     the full-plant case (ES-305), or narrowed to ``?area=`` when given (ES-306) — a
     full-plant caller may narrow to any area; a scoped caller only within their own
-    scope (403 otherwise).
+    scope (403 otherwise). When the resolved scope pins to exactly one area, that
+    area's own shift configuration is used if one exists (ES-307) — otherwise
+    resolution falls back to the plant-wide configuration, and the response's ``area``
+    reflects that fallback (``None``), not the lookup key.
     """
     scope = resolve_query_scope(user.area_scope, area)
-    shift, resolved_area = await resolve_current_shift(repo, config, now=None, area=None)
+    effective_area = sole_area(scope)
+    shift, resolved_area = await resolve_current_shift(repo, config, now=None, area=effective_area)
     payload = ShiftContext(
         shift_id=shift.shift_id,
         label=shift.label,
