@@ -1,9 +1,14 @@
 """Role request/response schemas (admin role management)."""
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 
 from src.application.admin.manage_roles import GroupRoleMapping
 from src.domain.users_roles.entities import Role
+
+_ROLE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
+_PERMISSION_RE = re.compile(r"^([a-z_]+:[a-z_]+|\*)$")
 
 
 class CreateRoleRequest(BaseModel):
@@ -13,6 +18,37 @@ class CreateRoleRequest(BaseModel):
     permissions: list[str] = Field(min_length=1)
     ad_groups: list[str] = Field(min_length=1)
     area_scope: list[str] | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, v: str) -> str:
+        if not _ROLE_NAME_RE.match(v):
+            raise ValueError(
+                "Role name must start with a letter and contain only letters, "
+                "digits or underscores."
+            )
+        return v
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def _validate_permissions(cls, v: list) -> list:
+        for p in v:
+            if not isinstance(p, str) or not p.strip():
+                raise ValueError("Each permission must be a non-empty string.")
+            if not _PERMISSION_RE.match(p):
+                raise ValueError(
+                    f"Permission '{p}' must be '*' or in 'resource:action' format "
+                    f"(e.g. 'user:read')."
+                )
+        return v
+
+    @field_validator("ad_groups", mode="before")
+    @classmethod
+    def _validate_ad_groups(cls, v: list) -> list:
+        for g in v:
+            if not isinstance(g, str) or not g.strip():
+                raise ValueError("Each AD group must be a non-empty string.")
+        return v
 
 
 class UpdateRoleRequest(BaseModel):
@@ -25,6 +61,43 @@ class UpdateRoleRequest(BaseModel):
     clear_area_scope: bool = Field(
         default=False, description="Set true to clear area_scope back to full-plant."
     )
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not _ROLE_NAME_RE.match(v):
+            raise ValueError(
+                "Role name must start with a letter and contain only letters, "
+                "digits or underscores."
+            )
+        return v
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def _validate_permissions(cls, v: list | None) -> list | None:
+        if v is None:
+            return v
+        for p in v:
+            if not isinstance(p, str) or not p.strip():
+                raise ValueError("Each permission must be a non-empty string.")
+            if not _PERMISSION_RE.match(p):
+                raise ValueError(
+                    f"Permission '{p}' must be '*' or in 'resource:action' format "
+                    f"(e.g. 'user:read')."
+                )
+        return v
+
+    @field_validator("ad_groups", mode="before")
+    @classmethod
+    def _validate_ad_groups(cls, v: list | None) -> list | None:
+        if v is None:
+            return v
+        for g in v:
+            if not isinstance(g, str) or not g.strip():
+                raise ValueError("Each AD group must be a non-empty string.")
+        return v
 
 
 class RoleResponse(BaseModel):

@@ -8,7 +8,7 @@ same interface.
 
 from abc import ABC, abstractmethod
 
-from src.domain.users_roles.entities import Role
+from src.domain.users_roles.entities import Role, User
 
 
 class RoleRepository(ABC):
@@ -36,3 +36,30 @@ class RoleRepository(ABC):
 
     @abstractmethod
     async def delete(self, role_id: str) -> None: ...
+
+
+class UserRepository(ABC):
+    """Persistence contract for admin-managed users."""
+
+    @abstractmethod
+    async def list_all(self) -> list[User]: ...
+
+    @abstractmethod
+    async def get(self, user_id: str) -> User | None: ...
+
+    @abstractmethod
+    async def get_by_username(self, username: str) -> User | None: ...
+
+    @abstractmethod
+    async def add(self, user: User) -> User: ...
+
+    @abstractmethod
+    async def update(self, user: User) -> User: ...
+
+    @abstractmethod
+    async def delete(self, user_id: str) -> None: ...
+
+    @abstractmethod
+    async def count_by_role_id(self, role_id: str) -> int:
+        """How many users currently have this role assigned (used for delete-conflict guard)."""
+        ...

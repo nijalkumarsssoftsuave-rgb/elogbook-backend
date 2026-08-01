@@ -9,7 +9,7 @@ path regardless of backend.
 
 from src.application.audit.recorder import AuditRecorder, NullAuditRecorder
 from src.application.pending_actions.repository import PendingActionRepository
-from src.application.users_roles.repository import RoleRepository
+from src.application.users_roles.repository import RoleRepository, UserRepository
 
 
 class MemoryUnitOfWork:
@@ -43,6 +43,29 @@ class MemoryRoleUnitOfWork:
         self.audit: AuditRecorder = NullAuditRecorder()
 
     async def __aenter__(self) -> "MemoryRoleUnitOfWork":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+
+class MemoryUserUnitOfWork:
+    """No-transaction unit of work over the shared in-memory user repository."""
+
+    def __init__(self, repository: UserRepository) -> None:
+        self.users = repository
+        self.audit: AuditRecorder = NullAuditRecorder()
+
+    async def __aenter__(self) -> "MemoryUserUnitOfWork":
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

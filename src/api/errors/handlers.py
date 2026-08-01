@@ -36,12 +36,18 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
         cid = correlation_id_ctx.get()
+        # Pydantic v2 @field_validator errors store the raw exception in ctx["error"],
+        # which is not JSON-serialisable — convert every ctx value to a string.
+        errors = [
+            {**e, "ctx": {k: str(v) for k, v in e["ctx"].items()}} if "ctx" in e else e
+            for e in exc.errors()
+        ]
         return JSONResponse(
             status_code=422,
             content=fail(
                 "validation_error",
                 "The request payload failed validation.",
-                details=exc.errors(),
+                details=errors,
                 correlation_id=cid,
             ),
         )

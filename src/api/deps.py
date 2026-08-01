@@ -23,7 +23,12 @@ from src.infrastructure.persistence.in_memory_pending_actions import (
     InMemoryPendingActionRepository,
 )
 from src.infrastructure.persistence.in_memory_roles import InMemoryRoleRepository
-from src.infrastructure.persistence.in_memory_uow import MemoryRoleUnitOfWork, MemoryUnitOfWork
+from src.infrastructure.persistence.in_memory_uow import (
+    MemoryRoleUnitOfWork,
+    MemoryUnitOfWork,
+    MemoryUserUnitOfWork,
+)
+from src.infrastructure.persistence.in_memory_users import InMemoryUserRepository
 
 
 def get_config() -> Settings:
@@ -34,6 +39,7 @@ def get_config() -> Settings:
 # single process-local repository instances (used by the in-memory backend)
 _pending_action_repo = InMemoryPendingActionRepository()
 _role_repo = InMemoryRoleRepository()
+_user_repo = InMemoryUserRepository()
 
 
 def get_pending_action_repository() -> PendingActionRepository:
@@ -134,6 +140,21 @@ async def get_role_uow() -> AsyncIterator[MemoryRoleUnitOfWork]:
         yield uow
 
 
+async def get_user_uow() -> AsyncIterator[MemoryUserUnitOfWork]:
+    """Inject a user unit of work for the configured backend (admin user mutations)."""
+    cfg = get_settings()
+    if cfg.persistence_backend == "sql":
+        from src.infrastructure.persistence.database import get_sessionmaker
+        from src.infrastructure.persistence.unit_of_work import SqlUserUnitOfWork
+
+        uow = SqlUserUnitOfWork(get_sessionmaker())
+    else:
+        uow = MemoryUserUnitOfWork(_user_repo)
+
+    async with uow:
+        yield uow
+
+
 # Registers a real OpenAPI security scheme so Swagger shows the "Authorize" button
 # (top-right) instead of a per-endpoint header box; auto_error=False so a missing token
 # still reaches validate_token(None) and gets our standard UnauthorizedError envelope.
@@ -160,6 +181,7 @@ PendingActions = Annotated[PendingActionRepository, Depends(get_pending_action_r
 PendingActionUoW = Annotated[MemoryUnitOfWork, Depends(get_pending_action_uow)]
 RoleRepositoryDep = Annotated[RoleRepository, Depends(get_role_repository)]
 RoleUoW = Annotated[MemoryRoleUnitOfWork, Depends(get_role_uow)]
+UserUoW = Annotated[MemoryUserUnitOfWork, Depends(get_user_uow)]
 AuditReaderDep = Annotated[AuditReader, Depends(get_audit_reader)]
 
 

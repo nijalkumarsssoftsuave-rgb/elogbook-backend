@@ -17,6 +17,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    ForeignKey,
     Integer,
     MetaData,
     String,
@@ -39,6 +40,20 @@ roles = Table(
     Column("permissions", Text, nullable=False),  # JSON array of permission strings
     Column("ad_groups", Text, nullable=False),  # JSON array of AD group names
     Column("area_scope", Text, nullable=True),  # JSON array, or NULL = full plant
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+# --- users (admin-managed; optional role override) ---------------------------------
+users = Table(
+    "users",
+    metadata,
+    Column("id", String(32), primary_key=True),
+    Column("username", String(128), nullable=False, unique=True),  # AD sAMAccountName, lowercase
+    Column("display_name", String(256), nullable=False),
+    Column("email", String(256), nullable=False),
+    Column("is_active", Boolean, nullable=False),
+    Column("role_id", String(32), ForeignKey("roles.id"), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
