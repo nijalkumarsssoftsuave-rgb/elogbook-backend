@@ -6,6 +6,7 @@ base role's wildcard (``"*"``) is seed data on that role, not a special case her
 """
 
 from src.domain.users_roles.entities import Role
+from src.domain.users_roles.permissions import AreaScope
 
 
 def permissions_for_roles(roles: list[Role]) -> list[str]:
@@ -29,3 +30,14 @@ def area_scope_for_roles(roles: list[Role]) -> list[str] | None:
     for role in roles:
         scope.update(role.area_scope or [])
     return sorted(scope) if scope else None
+
+
+def resolve_query_scope(area_scope: list[str] | None) -> list[str] | None:
+    """The areas this request is restricted to. ``None`` = unrestricted (full plant).
+
+    ES-305: full-plant callers (the default for every base operational role) get
+    ``None`` back — no restriction. A role with an area scope gets that scope back
+    unchanged. Narrowing to one specific area via an explicit request (``?area=``) is
+    ES-306; this is the baseline "what do I see by default" resolution.
+    """
+    return AreaScope.of(area_scope).as_list()
