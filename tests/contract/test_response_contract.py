@@ -60,3 +60,22 @@ async def test_current_shift_for_operator(client):
     data = resp.json()["data"]
     assert data["label"] in {"Day", "Night"}
     assert data["overlap_minutes"] == 15
+
+
+async def test_paginated_shift_history_envelope(client):
+    """The paginated GET /shifts response still wraps correctly in the standard
+    envelope, and its ``data`` carries all six pagination keys (US-009 ES-314).
+    """
+    resp = await client.get(
+        "/api/v1/shifts",
+        headers={"Authorization": OPERATOR},
+        params={"date_from": "2026-07-30", "date_to": "2026-07-30"},
+    )
+    assert resp.status_code == 200
+    assert "X-Correlation-ID" in resp.headers
+    body = resp.json()
+    assert body["success"] is True
+    assert "timestamp" in body["meta"]
+    data = body["data"]
+    for key in ("items", "page", "page_size", "total", "total_pages", "sort"):
+        assert key in data

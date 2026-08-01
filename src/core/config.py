@@ -5,8 +5,9 @@ comes from the environment (managed secrets engine in the real environments).
 """
 
 from functools import lru_cache
+from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -60,14 +61,28 @@ class Settings(BaseSettings):
     shift_start_hour: int = 6  # 06:00
     shift_overlap_minutes: int = 15  # 06:00–06:15 overlap
 
-    # --- shift history query range (US-009 ES-312) ---
-    # A distinct concern from the shift-*definition* bootstrap defaults above: this
-    # bounds how wide a GET /shifts date range can be, not the shift window shape itself.
+    # --- shift history query range + pagination (US-009 ES-312/314) ---
+    # A distinct concern from the shift-*definition* bootstrap defaults above: these
+    # bound the GET /shifts date range and page size, not the shift window shape itself.
     shift_history_max_range_days: int = 92
+    shift_history_page_size_default: int = 20
+    shift_history_page_size_max: int = 100
 
     # --- pending-action workflow (Admin-toggled; BRD FR-PA-05) ---
     # when False: capture + confirm-inclusion only, no assignment or lifecycle tracking
     action_workflow_enabled: bool = False
+
+    @model_validator(mode="after")
+    def _shift_history_page_size_default_within_max(self) -> Self:
+        """A misconfigured ``.env`` (default > max) would silently defeat the max cap
+        for every request that omits ``page_size`` — fail fast at startup instead."""
+        if self.shift_history_page_size_default > self.shift_history_page_size_max:
+            raise ValueError(
+                "shift_history_page_size_default "
+                f"({self.shift_history_page_size_default}) must not exceed "
+                f"shift_history_page_size_max ({self.shift_history_page_size_max})."
+            )
+        return self
 
 
 @lru_cache

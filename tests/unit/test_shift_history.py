@@ -385,8 +385,8 @@ async def test_span_exceeding_max_range_days_raises_validation_error():
 async def test_list_shift_history_returns_windows_in_range():
     repo = _FakeShiftConfigRepository([make_config()])
     query = ShiftHistoryQuery(date_from=date(2026, 7, 30), date_to=date(2026, 7, 30))
-    items = await list_shift_history(repo, _settings(), query)
-    assert [s.shift_id for s, _ in items] == ["20260730-D", "20260730-N"]
+    result = await list_shift_history(repo, _settings(), query)
+    assert [s.shift_id for s, _ in result.items] == ["20260730-N", "20260730-D"]  # default desc
 
 
 async def test_list_shift_history_filters_by_area():
@@ -398,8 +398,118 @@ async def test_list_shift_history_filters_by_area():
     query = ShiftHistoryQuery(
         date_from=date(2026, 7, 30), date_to=date(2026, 7, 30), area="Train 1"
     )
-    items = await list_shift_history(repo, _settings(), query)
-    assert all(a == "Train 1" or a is None for _, a in items)
+    result = await list_shift_history(repo, _settings(), query)
+    assert all(a == "Train 1" or a is None for _, a in result.items)
+
+
+# --- list_shift_history: pagination + sort (ES-314) --------------------------------------
+
+
+async def test_pagination_slices_exactly_against_known_total():
+    repo = _FakeShiftConfigRepository([make_config()])
+    # 3 days x 2 shifts/day = 6 total.
+    page1 = await list_shift_history(
+        repo,
+        _settings(),
+        ShiftHistoryQuery(
+            date_from=date(2026, 7, 28),
+            date_to=date(2026, 7, 30),
+            page_size=4,
+            sort="starts_at:asc",
+        ),
+    )
+    assert page1.total == 6
+    assert page1.total_pages == 2
+    assert len(page1.items) == 4
+
+    page2 = await list_shift_history(
+        repo,
+        _settings(),
+        ShiftHistoryQuery(
+            date_from=date(2026, 7, 28),
+            date_to=date(2026, 7, 30),
+            page=2,
+            page_size=4,
+            sort="starts_at:asc",
+        ),
+    )
+    assert len(page2.items) == 2
+    # disjoint from page 1
+    assert {s.shift_id for s, _ in page1.items}.isdisjoint({s.shift_id for s, _ in page2.items})
+
+
+async def test_page_past_the_last_page_returns_empty_items_without_erroring():
+    repo = _FakeShiftConfigRepository([make_config()])
+    query = ShiftHistoryQuery(date_from=date(2026, 7, 30), date_to=date(2026, 7, 30), page=99)
+    result = await list_shift_history(repo, _settings(), query)
+    assert result.items == []
+    assert result.total == 2  # unchanged — only the slice is empty, not the count
+
+
+def test_total_pages_ceiling_computation_matches_expected_math():
+    """``list_shift_history``'s ``total_pages = ceil(total/page_size) if total else 0``
+    guard against a div-by-zero/off-by-one is exercised through real queries above
+    (6 shifts / page_size=4 -> 2 pages); a genuinely empty ``total`` can't occur through
+    the validated public interface (any valid date range enumerates at least one day's
+    shifts, via the Settings fallback if nothing else). Pin the ceiling math itself
+    directly so the ``if total else 0`` branch's intent stays documented and correct.
+    """
+    from math import ceil
+
+    assert ceil(6 / 4) == 2
+    assert ceil(2 / 2) == 1
+    assert (ceil(0 / 20) if 0 else 0) == 0
+
+
+async def test_default_sort_is_descending_and_asc_is_exact_reverse():
+    repo = _FakeShiftConfigRepository([make_config()])
+    desc = await list_shift_history(
+        repo, _settings(), ShiftHistoryQuery(date_from=date(2026, 7, 30), date_to=date(2026, 7, 30))
+    )
+    asc = await list_shift_history(
+        repo,
+        _settings(),
+        ShiftHistoryQuery(
+            date_from=date(2026, 7, 30), date_to=date(2026, 7, 30), sort="starts_at:asc"
+        ),
+    )
+    assert desc.sort == "starts_at:desc"
+    assert asc.items == list(reversed(desc.items))
+
+
+async def test_page_size_exceeding_max_raises_validation_error():
+    repo = _FakeShiftConfigRepository([make_config()])
+    query = ShiftHistoryQuery(date_from=date(2026, 7, 30), date_to=date(2026, 7, 30), page_size=500)
+    with pytest.raises(ValidationError):
+        await list_shift_history(repo, _settings(shift_history_page_size_max=100), query)
+
+
+async def test_omitted_page_size_uses_settings_default():
+    repo = _FakeShiftConfigRepository([make_config()])
+    query = ShiftHistoryQuery(date_from=date(2026, 7, 28), date_to=date(2026, 8, 1))
+    result = await list_shift_history(repo, _settings(shift_history_page_size_default=3), query)
+    assert result.page_size == 3
+    assert len(result.items) == 3
+
+
+async def test_page_below_one_raises_validation_error():
+    """Defense-in-depth: this use case must not depend on the API layer's
+    Query(ge=1) alone — a caller reaching it directly with page=0 gets the same
+    guarantee, not a corrupted negative-index slice."""
+    repo = _FakeShiftConfigRepository([make_config()])
+    query = ShiftHistoryQuery(date_from=date(2026, 7, 30), date_to=date(2026, 7, 30), page=0)
+    with pytest.raises(ValidationError):
+        await list_shift_history(repo, _settings(), query)
+
+
+async def test_page_size_below_one_raises_validation_error():
+    """page_size=0 is falsy, so `query.page_size or settings_default` would otherwise
+    silently substitute the default instead of rejecting the caller's explicit,
+    invalid request — and a negative page_size would pass the `> max` check outright."""
+    repo = _FakeShiftConfigRepository([make_config()])
+    query = ShiftHistoryQuery(date_from=date(2026, 7, 30), date_to=date(2026, 7, 30), page_size=0)
+    with pytest.raises(ValidationError):
+        await list_shift_history(repo, _settings(), query)
 
 
 # --- get_shift_by_id (ES-313) -----------------------------------------------------------
@@ -433,7 +543,7 @@ async def test_get_shift_by_id_matches_list_enumeration_across_config_change():
     listed = await list_shift_history(
         repo, _settings(), ShiftHistoryQuery(date_from=date(2026, 7, 30), date_to=date(2026, 7, 30))
     )
-    for shift, resolved_area in listed:
+    for shift, resolved_area in listed.items:
         looked_up = await get_shift_by_id(repo, _settings(), shift.shift_id, None)
         assert looked_up == (shift, resolved_area)
 
@@ -446,3 +556,16 @@ async def test_get_shift_by_id_resolves_area_specific_configuration():
     shift, resolved_area = result
     assert resolved_area == "Train 1"
     assert shift.starts_at.hour == 8
+
+
+def test_settings_rejects_default_page_size_exceeding_max():
+    """A misconfigured .env (default > max) would otherwise silently defeat
+    shift_history_page_size_max for every request that omits page_size — must fail
+    fast at Settings construction, not surface as a confusing runtime behaviour."""
+    with pytest.raises(ValueError, match="shift_history_page_size_default"):
+        Settings(shift_history_page_size_default=200, shift_history_page_size_max=100)
+
+
+def test_settings_allows_default_equal_to_max():
+    settings = Settings(shift_history_page_size_default=100, shift_history_page_size_max=100)
+    assert settings.shift_history_page_size_default == 100

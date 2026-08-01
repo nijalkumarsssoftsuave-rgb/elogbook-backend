@@ -1,7 +1,4 @@
-"""Integration tests for the shift-history endpoints (US-009 ES-312/313).
-
-Pagination/sort response-shape tests land in ES-314.
-"""
+"""Integration tests for the shift-history endpoints (US-009 ES-312/313/314)."""
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -46,8 +43,11 @@ async def test_valid_range_returns_the_expected_shifts(client):
         params={"date_from": "2026-07-30", "date_to": "2026-07-30"},
     )
     assert resp.status_code == 200
-    ids = [item["shift_id"] for item in resp.json()["data"]]
-    assert ids == ["20260730-D", "20260730-N"]
+    data = resp.json()["data"]
+    ids = [item["shift_id"] for item in data["items"]]
+    assert ids == ["20260730-N", "20260730-D"]  # default sort is starts_at:desc
+    assert data["page"] == 1
+    assert data["total"] == 2
 
 
 async def test_date_from_after_date_to_is_unprocessable(client):
@@ -87,6 +87,66 @@ async def test_empty_area_param_is_unprocessable(client):
         "/api/v1/shifts",
         headers={"Authorization": OPERATOR},
         params={"date_from": "2026-07-30", "date_to": "2026-07-30", "area": ""},
+    )
+    assert resp.status_code == 422
+
+
+async def test_page_size_above_max_is_unprocessable(client):
+    resp = await client.get(
+        "/api/v1/shifts",
+        headers={"Authorization": OPERATOR},
+        params={"date_from": "2026-07-28", "date_to": "2026-07-30", "page_size": 500},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "validation_error"
+
+
+async def test_page_size_omitted_uses_default(client):
+    resp = await client.get(
+        "/api/v1/shifts",
+        headers={"Authorization": OPERATOR},
+        params={"date_from": "2026-07-28", "date_to": "2026-07-30"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["page_size"] == 20  # settings default
+
+
+async def test_page_2_returns_a_disjoint_slice_from_page_1(client):
+    common = {"date_from": "2026-07-28", "date_to": "2026-07-30", "page_size": 4}
+    page1 = await client.get(
+        "/api/v1/shifts", headers={"Authorization": OPERATOR}, params={**common, "page": 1}
+    )
+    page2 = await client.get(
+        "/api/v1/shifts", headers={"Authorization": OPERATOR}, params={**common, "page": 2}
+    )
+    ids1 = {item["shift_id"] for item in page1.json()["data"]["items"]}
+    ids2 = {item["shift_id"] for item in page2.json()["data"]["items"]}
+    assert ids1.isdisjoint(ids2)
+    assert len(ids1) == 4
+    assert len(ids2) == 2
+
+
+async def test_sort_asc_reverses_the_default_order(client):
+    desc = await client.get(
+        "/api/v1/shifts",
+        headers={"Authorization": OPERATOR},
+        params={"date_from": "2026-07-30", "date_to": "2026-07-30"},
+    )
+    asc = await client.get(
+        "/api/v1/shifts",
+        headers={"Authorization": OPERATOR},
+        params={"date_from": "2026-07-30", "date_to": "2026-07-30", "sort": "starts_at:asc"},
+    )
+    assert [i["shift_id"] for i in asc.json()["data"]["items"]] == list(
+        reversed([i["shift_id"] for i in desc.json()["data"]["items"]])
+    )
+
+
+async def test_invalid_sort_value_is_unprocessable(client):
+    resp = await client.get(
+        "/api/v1/shifts",
+        headers={"Authorization": OPERATOR},
+        params={"date_from": "2026-07-30", "date_to": "2026-07-30", "sort": "garbage"},
     )
     assert resp.status_code == 422
 
@@ -149,7 +209,7 @@ async def test_fetch_by_id_using_an_id_taken_from_the_list_matches(client):
         headers={"Authorization": OPERATOR},
         params={"date_from": "2026-07-30", "date_to": "2026-07-30"},
     )
-    shift_id = listed.json()["data"][0]["shift_id"]
+    shift_id = listed.json()["data"]["items"][0]["shift_id"]
 
     resp = await client.get(f"/api/v1/shifts/{shift_id}", headers={"Authorization": OPERATOR})
     assert resp.status_code == 200
@@ -231,7 +291,7 @@ async def test_id_belonging_to_a_different_area_is_not_found_for_an_implicitly_s
         headers={"Authorization": ADMIN},
         params={"date_from": "2026-07-30", "date_to": "2026-07-30", "area": "Train 2"},
     )
-    train2_shift_id = train2_listed.json()["data"][0]["shift_id"]
+    train2_shift_id = train2_listed.json()["data"]["items"][0]["shift_id"]
 
     resp = await client.get(
         f"/api/v1/shifts/{train2_shift_id}", headers={"Authorization": train1_token}
