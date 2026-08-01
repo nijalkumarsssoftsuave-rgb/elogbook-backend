@@ -1,5 +1,7 @@
 """Integration tests for the pending-actions API, through the real app + in-memory repo."""
 
+from datetime import date, timedelta
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -48,7 +50,11 @@ async def test_assignment_blocked_when_workflow_disabled(client):
     resp = await client.post(
         "/api/v1/pending-actions",
         headers={"Authorization": SUPERVISOR},
-        json={"issue": "Replace gasket", "owner": "op.ahmed", "due_date": "2026-08-01"},
+        json={
+            "issue": "Replace gasket",
+            "owner": "op.ahmed",
+            "due_date": (date.today() + timedelta(days=1)).isoformat(),
+        },
     )
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "forbidden"
