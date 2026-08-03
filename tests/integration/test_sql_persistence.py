@@ -5,6 +5,8 @@ writer sharing one transaction via the unit of work — against an in-memory SQL
 so no SQL Server is required. Skips if SQLAlchemy/aiosqlite are not installed.
 """
 
+from datetime import UTC, datetime
+
 import pytest
 
 # The SQLAlchemy async stack needs greenlet's compiled extension; on a box missing the
@@ -154,6 +156,33 @@ async def test_rollback_leaves_nothing_persisted(sessionmaker):
         assert await list_actions(uow.actions, ActionFilter()) == []
     async with sessionmaker() as s:
         assert (await s.execute(audit_log.select())).all() == []
+
+
+async def test_created_at_range_filter_scopes_to_a_shift_window(sessionmaker):
+    """ES-344 — the shift-actions report's filter works against real persistence too."""
+    async with SqlUnitOfWork(sessionmaker) as uow:
+        inside = await capture_action(
+            uow.actions, issue="inside", priority=Priority.LOW, source=Source.MANUAL
+        )
+        outside = await capture_action(
+            uow.actions, issue="outside", priority=Priority.LOW, source=Source.MANUAL
+        )
+
+    async with SqlUnitOfWork(sessionmaker) as uow:
+        inside.created_at = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
+        await uow.actions.update(inside)
+        outside.created_at = datetime(2026, 7, 29, 10, 0, tzinfo=UTC)
+        await uow.actions.update(outside)
+
+    async with SqlUnitOfWork(sessionmaker) as uow:
+        result = await list_actions(
+            uow.actions,
+            ActionFilter(
+                created_from=datetime(2026, 7, 30, 6, 0, tzinfo=UTC),
+                created_to=datetime(2026, 7, 30, 18, 0, tzinfo=UTC),
+            ),
+        )
+    assert [a.issue for a in result] == ["inside"]
 
 
 async def test_list_filters(sessionmaker):

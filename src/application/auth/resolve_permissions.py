@@ -29,3 +29,13 @@ def area_scope_for_roles(roles: list[Role]) -> list[str] | None:
     for role in roles:
         scope.update(role.area_scope or [])
     return sorted(scope) if scope else None
+
+
+def is_in_area_scope(area: str | None, area_scope: list[str] | None) -> bool:
+    """Full-plant (``area_scope=None``) sees everything; a scoped role only its areas.
+
+    Single source of truth for this check — every endpoint that filters area-restricted
+    records (pending-actions, the shift-actions report) must apply it identically, or a
+    scoped role could see data outside its area on one endpoint but not another.
+    """
+    return area_scope is None or area in area_scope

@@ -95,6 +95,10 @@ class SqlPendingActionRepository(PendingActionRepository):
             stmt = stmt.where(c.equipment == filters.equipment)
         if filters.priority is not None:
             stmt = stmt.where(c.priority == filters.priority.value)
+        if filters.created_from is not None:
+            stmt = stmt.where(c.created_at >= filters.created_from)
+        if filters.created_to is not None:
+            stmt = stmt.where(c.created_at < filters.created_to)
         stmt = stmt.order_by(c.created_at.desc())
         result = await self._session.execute(stmt)
         return [_to_entity(row) for row in result.all()]
