@@ -46,6 +46,79 @@ async def test_capture_and_list(client):
     assert len(listed.json()["data"]) == 1
 
 
+async def test_list_filters_by_source(client):
+    await client.post(
+        "/api/v1/pending-actions",
+        headers={"Authorization": OPERATOR},
+        json={"issue": "Manual entry"},
+    )
+    await client.post(
+        "/api/v1/pending-actions/extract-candidates",
+        headers={"Authorization": OPERATOR},
+        json={"text": "AI entry."},
+    )
+    await client.post(
+        "/api/v1/pending-actions/confirm-inclusion",
+        headers={"Authorization": SUPERVISOR},
+        json={"issue": "AI entry"},
+    )
+
+    manual_only = await client.get(
+        "/api/v1/pending-actions", params={"source": "manual"}, headers={"Authorization": OPERATOR}
+    )
+    ai_only = await client.get(
+        "/api/v1/pending-actions", params={"source": "ai"}, headers={"Authorization": OPERATOR}
+    )
+    assert [a["issue"] for a in manual_only.json()["data"]] == ["Manual entry"]
+    assert [a["issue"] for a in ai_only.json()["data"]] == ["AI entry"]
+
+
+async def test_list_filters_by_created_date_range(client):
+    created = await client.post(
+        "/api/v1/pending-actions",
+        headers={"Authorization": OPERATOR},
+        json={"issue": "Check alarm"},
+    )
+    action_id = created.json()["data"]["id"]
+    created_at = created.json()["data"]["created_at"]
+
+    inside = await client.get(
+        "/api/v1/pending-actions",
+        params={"created_from": "2020-01-01T00:00:00Z", "created_to": "2099-01-01T00:00:00Z"},
+        headers={"Authorization": OPERATOR},
+    )
+    outside = await client.get(
+        "/api/v1/pending-actions",
+        params={"created_from": "2099-01-01T00:00:00Z"},
+        headers={"Authorization": OPERATOR},
+    )
+    assert action_id in [a["id"] for a in inside.json()["data"]]
+    assert action_id not in [a["id"] for a in outside.json()["data"]]
+    assert created_at is not None  # sanity: capture actually stamped a real timestamp
+
+
+async def test_timezone_naive_created_from_does_not_crash(client):
+    """Regression: a naive ISO datetime (no UTC offset) used to 500 the in-memory backend.
+
+    It raised "can't compare offset-naive and offset-aware datetimes" — ActionFilter now
+    normalises a naive value to UTC instead of comparing it raw.
+    """
+    created = await client.post(
+        "/api/v1/pending-actions",
+        headers={"Authorization": OPERATOR},
+        json={"issue": "Check alarm"},
+    )
+    action_id = created.json()["data"]["id"]
+
+    resp = await client.get(
+        "/api/v1/pending-actions",
+        params={"created_from": "2020-01-01T00:00:00"},  # deliberately no "Z"/offset
+        headers={"Authorization": OPERATOR},
+    )
+    assert resp.status_code == 200
+    assert action_id in [a["id"] for a in resp.json()["data"]]
+
+
 async def test_assignment_blocked_when_workflow_disabled(client):
     resp = await client.post(
         "/api/v1/pending-actions",

@@ -95,6 +95,8 @@ class SqlPendingActionRepository(PendingActionRepository):
             stmt = stmt.where(c.equipment == filters.equipment)
         if filters.priority is not None:
             stmt = stmt.where(c.priority == filters.priority.value)
+        if filters.source is not None:
+            stmt = stmt.where(c.source == filters.source.value)
         if filters.created_from is not None:
             stmt = stmt.where(c.created_at >= filters.created_from)
         if filters.created_to is not None:

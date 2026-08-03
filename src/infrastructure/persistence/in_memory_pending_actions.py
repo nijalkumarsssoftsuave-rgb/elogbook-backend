@@ -34,6 +34,7 @@ class InMemoryPendingActionRepository(PendingActionRepository):
                 and (filters.area is None or a.area == filters.area)
                 and (filters.equipment is None or a.equipment == filters.equipment)
                 and (filters.priority is None or a.priority == filters.priority)
+                and (filters.source is None or a.source == filters.source)
                 and (filters.created_from is None or a.created_at >= filters.created_from)
                 and (filters.created_to is None or a.created_at < filters.created_to)
             )

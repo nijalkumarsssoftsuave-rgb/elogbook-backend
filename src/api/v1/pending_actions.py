@@ -8,6 +8,7 @@ Every request runs inside a unit of work; mutations write a hash-chained audit e
 the same transaction as the change (see ``get_pending_action_uow``).
 """
 
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -49,11 +50,28 @@ async def list_pending_actions(
     area: Annotated[str | None, Query()] = None,
     equipment: Annotated[str | None, Query()] = None,
     priority: Annotated[Priority | None, Query()] = None,
+    source: Annotated[Source | None, Query()] = None,
+    created_from: Annotated[datetime | None, Query()] = None,
+    created_to: Annotated[datetime | None, Query()] = None,
 ) -> dict:
-    """List pending actions with optional filters, restricted to the caller's area scope."""
+    """List pending actions with optional filters, restricted to the caller's area scope.
+
+    ``source`` (ES-348) filters manual vs. AI-confirmed actions. ``created_from``/
+    ``created_to`` reuse the same range filter the shift-actions report (ES-344) already
+    built into ``ActionFilter`` — now available generically, not just from that endpoint.
+    """
     actions = await list_actions(
         uow.actions,
-        ActionFilter(status=status, owner=owner, area=area, equipment=equipment, priority=priority),
+        ActionFilter(
+            status=status,
+            owner=owner,
+            area=area,
+            equipment=equipment,
+            priority=priority,
+            source=source,
+            created_from=created_from,
+            created_to=created_to,
+        ),
     )
     visible = [a for a in actions if is_in_area_scope(a.area, user.area_scope)]
     return ok([ActionResponse.of(a).model_dump() for a in visible], correlation_id=_cid())
