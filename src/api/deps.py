@@ -12,12 +12,14 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.api.errors.exceptions import ForbiddenError
+from src.application.ai_extraction.extractor import ActionExtractor
 from src.application.audit.reader import AuditReader, NullAuditReader
 from src.application.audit.recorder import AuditRecorder, NullAuditRecorder
 from src.application.auth.resolve_permissions import has_permission
 from src.application.pending_actions.repository import PendingActionRepository
 from src.application.users_roles.repository import RoleRepository
 from src.core.config import Settings, get_settings
+from src.infrastructure.ai_client.client import HttpActionExtractor, StubActionExtractor
 from src.infrastructure.auth.token_validator import Principal, validate_token
 from src.infrastructure.persistence.in_memory_pending_actions import (
     InMemoryPendingActionRepository,
@@ -134,6 +136,29 @@ async def get_role_uow() -> AsyncIterator[MemoryRoleUnitOfWork]:
         yield uow
 
 
+_http_action_extractor: HttpActionExtractor | None = None
+
+
+def get_action_extractor() -> ActionExtractor:
+    """Inject the AI action-extractor (ES-341).
+
+    The real ai-service client, or a local stub while ``ai_service_stub_enabled``
+    (default locally, same switch as AD FS/SMTP). ``HttpActionExtractor`` is cached as a
+    process-local singleton, same pattern as ``_role_repo``/``_pending_action_repo``
+    above — it owns a pooled ``httpx.AsyncClient``, so it must outlive a single request
+    to actually reuse connections to ai-service instead of paying a fresh handshake
+    every call. ``StubActionExtractor`` holds no such resource, so it's cheap to build
+    fresh each time.
+    """
+    cfg = get_settings()
+    if cfg.ai_service_stub_enabled:
+        return StubActionExtractor()
+    global _http_action_extractor
+    if _http_action_extractor is None:
+        _http_action_extractor = HttpActionExtractor(cfg.ai_service_url)
+    return _http_action_extractor
+
+
 # Registers a real OpenAPI security scheme so Swagger shows the "Authorize" button
 # (top-right) instead of a per-endpoint header box; auto_error=False so a missing token
 # still reaches validate_token(None) and gets our standard UnauthorizedError envelope.
@@ -161,6 +186,7 @@ PendingActionUoW = Annotated[MemoryUnitOfWork, Depends(get_pending_action_uow)]
 RoleRepositoryDep = Annotated[RoleRepository, Depends(get_role_repository)]
 RoleUoW = Annotated[MemoryRoleUnitOfWork, Depends(get_role_uow)]
 AuditReaderDep = Annotated[AuditReader, Depends(get_audit_reader)]
+ActionExtractorDep = Annotated[ActionExtractor, Depends(get_action_extractor)]
 
 
 def require_permission(permission: str):

@@ -12,13 +12,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from src.api.deps import Config, PendingActionUoW, require_permission
+from src.api.deps import ActionExtractorDep, Config, PendingActionUoW, require_permission
 from src.api.errors.exceptions import ForbiddenError, NotFoundError
+from src.api.schemas.ai_extraction import CandidateActionResponse, ExtractCandidatesRequest
 from src.api.schemas.pending_action import (
     ActionResponse,
     CreateActionRequest,
     TransitionRequest,
 )
+from src.application.ai_extraction.extract_candidates import extract_candidate_actions
 from src.application.pending_actions.create_action import capture_action
 from src.application.pending_actions.list_actions import get_action, list_actions
 from src.application.pending_actions.repository import ActionFilter
@@ -70,6 +72,26 @@ async def get_pending_action(
     if action is None or not _in_scope(action.area, user.area_scope):
         raise NotFoundError(f"Pending action {action_id} was not found.")
     return ok(ActionResponse.of(action).model_dump(), correlation_id=_cid())
+
+
+@router.post("/extract-candidates")
+async def extract_candidates_endpoint(
+    body: ExtractCandidatesRequest,
+    extractor: ActionExtractorDep,
+    user: Annotated[Principal, Depends(require_permission("action:read"))],
+) -> dict:
+    """Suggest candidate actions from free text via ai-service (ES-341).
+
+    A read, not a mutation — nothing is persisted or audited here. A supervisor
+    confirms the candidates worth keeping via the existing ``POST /pending-actions``
+    with ``source: "ai"``, which is already captured and audited like any other action.
+    """
+    candidates = await extract_candidate_actions(
+        extractor, body.text, area=body.area, equipment=body.equipment
+    )
+    return ok(
+        [CandidateActionResponse.of(c).model_dump() for c in candidates], correlation_id=_cid()
+    )
 
 
 @router.post("")

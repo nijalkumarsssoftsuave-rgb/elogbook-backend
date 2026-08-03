@@ -47,3 +47,9 @@ class ConflictError(AppError):
     status_code = 409
     code = "conflict"
     message = "The request conflicts with the current state."
+
+
+class ExternalServiceError(AppError):
+    status_code = 502
+    code = "external_service_error"
+    message = "A dependency (e.g. ai-service) failed to respond correctly."
