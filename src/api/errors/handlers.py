@@ -1,5 +1,7 @@
 """Exception handlers that render every error through the unified envelope."""
 
+from collections.abc import Sequence
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -10,6 +12,23 @@ from src.core.response import fail
 from src.domain.pending_actions.state_machine import IllegalTransitionError
 
 logger = get_logger(__name__)
+
+
+def _json_safe_errors(errors: Sequence[dict]) -> list[dict]:
+    """Strip the one non-JSON-serializable value Pydantic error dicts can carry.
+
+    Pydantic embeds the raised exception object itself in ``ctx['error']`` when a
+    custom validator raises ``ValueError`` (e.g. ``pending_action.py``'s blank/date
+    checks) — not JSON-serializable, so passing ``exc.errors()`` straight to
+    ``JSONResponse`` turns a legitimate 422 into a 500. Stringify just that one field.
+    """
+    safe = []
+    for err in errors:
+        err = dict(err)
+        if "ctx" in err and "error" in err["ctx"]:
+            err["ctx"] = {**err["ctx"], "error": str(err["ctx"]["error"])}
+        safe.append(err)
+    return safe
 
 
 def register_error_handlers(app: FastAPI) -> None:
@@ -41,7 +60,7 @@ def register_error_handlers(app: FastAPI) -> None:
             content=fail(
                 "validation_error",
                 "The request payload failed validation.",
-                details=exc.errors(),
+                details=_json_safe_errors(exc.errors()),
                 correlation_id=cid,
             ),
         )
