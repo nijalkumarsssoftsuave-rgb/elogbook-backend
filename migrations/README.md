@@ -20,6 +20,10 @@ previously hardcoded AD-group -> role -> permission mapping with real, admin-man
 rows. Seeds the five base roles so behaviour is unchanged until an Admin adds a custom
 one via `/admin/roles`.
 
+`0003_notifications.sql` — the `notifications` table (ES-355): one row per
+(recipient, channel) alert fired, e.g. by `scripts/sweep_overdue_actions.py` alerting an
+overdue action's owner in-app and by email.
+
 ## Applying
 
 **Production / dev (MS SQL, A-04):** apply each forward migration in filename order with

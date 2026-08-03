@@ -16,11 +16,15 @@ from src.application.ai_extraction.extractor import ActionExtractor
 from src.application.audit.reader import AuditReader, NullAuditReader
 from src.application.audit.recorder import AuditRecorder, NullAuditRecorder
 from src.application.auth.resolve_permissions import has_permission
+from src.application.notifications.repository import NotificationRepository
 from src.application.pending_actions.repository import PendingActionRepository
 from src.application.users_roles.repository import RoleRepository
 from src.core.config import Settings, get_settings
 from src.infrastructure.ai_client.client import HttpActionExtractor, StubActionExtractor
 from src.infrastructure.auth.token_validator import Principal, validate_token
+from src.infrastructure.persistence.in_memory_notifications import (
+    InMemoryNotificationRepository,
+)
 from src.infrastructure.persistence.in_memory_pending_actions import (
     InMemoryPendingActionRepository,
 )
@@ -36,6 +40,7 @@ def get_config() -> Settings:
 # single process-local repository instances (used by the in-memory backend)
 _pending_action_repo = InMemoryPendingActionRepository()
 _role_repo = InMemoryRoleRepository()
+_notification_repo = InMemoryNotificationRepository()
 
 
 def get_pending_action_repository() -> PendingActionRepository:
@@ -136,6 +141,24 @@ async def get_role_uow() -> AsyncIterator[MemoryRoleUnitOfWork]:
         yield uow
 
 
+async def get_notification_repository() -> AsyncIterator[NotificationRepository]:
+    """Inject a notification repository for the configured backend (ES-355).
+
+    A plain read for ``GET /notifications`` — same shape as ``get_role_repository``.
+    Writing (``alert_owner``) happens outside a request, from the standalone sweep
+    script, which wires its own repository directly rather than through this dependency.
+    """
+    cfg = get_settings()
+    if cfg.persistence_backend == "sql":
+        from src.infrastructure.persistence.database import get_sessionmaker
+        from src.infrastructure.persistence.sql_notifications import SqlNotificationRepository
+
+        async with get_sessionmaker()() as session:
+            yield SqlNotificationRepository(session)
+    else:
+        yield _notification_repo
+
+
 _http_action_extractor: HttpActionExtractor | None = None
 
 
@@ -187,6 +210,7 @@ RoleRepositoryDep = Annotated[RoleRepository, Depends(get_role_repository)]
 RoleUoW = Annotated[MemoryRoleUnitOfWork, Depends(get_role_uow)]
 AuditReaderDep = Annotated[AuditReader, Depends(get_audit_reader)]
 ActionExtractorDep = Annotated[ActionExtractor, Depends(get_action_extractor)]
+NotificationRepositoryDep = Annotated[NotificationRepository, Depends(get_notification_repository)]
 
 
 def require_permission(permission: str):

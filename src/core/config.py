@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     ai_service_url: str = "http://localhost:9000"
     ai_service_stub_enabled: bool = True
 
+    # --- email (SMTP relay pending, Outstanding Items Tracker B-06; stub until then) ---
+    email_stub_enabled: bool = True
+
     # --- shift definition (Admin-configurable; defaults per BRD FR-HOME-03) ---
     shift_hours: int = 12
     shift_start_hour: int = 6  # 06:00
