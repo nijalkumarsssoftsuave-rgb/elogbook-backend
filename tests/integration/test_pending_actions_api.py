@@ -170,6 +170,56 @@ async def test_full_lifecycle_when_workflow_enabled(client, monkeypatch):
             assert r.json()["data"]["status"] == target
 
 
+async def test_transition_of_out_of_scope_action_is_404(client, monkeypatch):
+    """ES-350 — a scoped role can't mutate an action outside its area, even by id,
+
+    even though the state-machine transition itself would otherwise be legal.
+    """
+    monkeypatch.setenv("ELOG_ACTION_WORKFLOW_ENABLED", "true")
+    get_settings.cache_clear()
+
+    admin = bearer("admin.user", ["OLNG-ELOG-ADMINS"])
+    await client.post(
+        "/api/v1/admin/roles",
+        headers={"Authorization": admin},
+        json={
+            "name": "zone_x_scope_test_role",
+            "permissions": ["action:read", "action:write"],
+            "ad_groups": ["OLNG-ELOG-ZONEX-SCOPE-TEST"],
+            "area_scope": ["Zone X"],
+        },
+    )
+    scoped_token = bearer("zx.operator", ["OLNG-ELOG-ZONEX-SCOPE-TEST"])
+
+    in_scope = await client.post(
+        "/api/v1/pending-actions",
+        headers={"Authorization": SUPERVISOR},
+        json={"issue": "In Zone X", "area": "Zone X"},
+    )
+    out_of_scope = await client.post(
+        "/api/v1/pending-actions",
+        headers={"Authorization": SUPERVISOR},
+        json={"issue": "In Zone Y", "area": "Zone Y"},
+    )
+    in_scope_id = in_scope.json()["data"]["id"]
+    out_of_scope_id = out_of_scope.json()["data"]["id"]
+
+    blocked = await client.patch(
+        f"/api/v1/pending-actions/{out_of_scope_id}/transition",
+        headers={"Authorization": scoped_token},
+        json={"target": "In Progress"},
+    )
+    assert blocked.status_code == 404
+
+    allowed = await client.patch(
+        f"/api/v1/pending-actions/{in_scope_id}/transition",
+        headers={"Authorization": scoped_token},
+        json={"target": "In Progress"},
+    )
+    assert allowed.status_code == 200
+    assert allowed.json()["data"]["status"] == "In Progress"
+
+
 async def test_illegal_transition_returns_409(client, monkeypatch):
     monkeypatch.setenv("ELOG_ACTION_WORKFLOW_ENABLED", "true")
     get_settings.cache_clear()
