@@ -18,11 +18,15 @@ async def capture_action(
     due_date: date | None = None,
     audit: AuditRecorder | None = None,
     actor: str = "system",
+    audit_action: str = "pending_action.create",
 ) -> PendingAction:
     """Create and persist a new pending action in the OPEN state.
 
     When an ``audit`` recorder is supplied the capture is written to the immutable trail
     in the same unit of work, so the action and its audit entry are committed together.
+    ``audit_action`` lets a distinct caller (``confirm_inclusion``, ES-343) record this as
+    its own event type rather than an indistinguishable ``pending_action.create`` — the
+    create/persist/audit-payload shape is otherwise identical regardless of who called it.
     """
     action = PendingAction.create(
         issue=issue,
@@ -38,7 +42,7 @@ async def capture_action(
         await audit.record(
             AuditEntry(
                 actor=actor,
-                action="pending_action.create",
+                action=audit_action,
                 entity_type="pending_action",
                 entity_id=stored.id,
                 payload={

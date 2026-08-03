@@ -20,6 +20,7 @@ except ImportError as exc:  # pragma: no cover - environment-dependent
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
+from src.application.pending_actions.confirm_inclusion import confirm_inclusion  # noqa: E402
 from src.application.pending_actions.create_action import capture_action  # noqa: E402
 from src.application.pending_actions.list_actions import get_action, list_actions  # noqa: E402
 from src.application.pending_actions.repository import ActionFilter  # noqa: E402
@@ -107,6 +108,32 @@ async def test_transition_persists_and_extends_chain(sessionmaker):
         "pending_action.transition",
     ]
     assert rows[1]._mapping["prev_hash"] == rows[0]._mapping["entry_hash"]  # chain linked
+
+
+async def test_confirm_inclusion_persists_with_ai_source_and_distinct_audit_action(sessionmaker):
+    """ES-343 — a Supervisor's inclusion decision is real, persisted, and traceable."""
+    async with SqlUnitOfWork(sessionmaker) as uow:
+        created = await confirm_inclusion(
+            uow.actions,
+            issue="Inspect PSV on V-101",
+            priority=Priority.HIGH,
+            area="Train 1",
+            audit=uow.audit,
+            actor="sam.super",
+        )
+    assert created.source == Source.AI_EXTRACTED
+
+    async with SqlUnitOfWork(sessionmaker) as uow:
+        fetched = await get_action(uow.actions, created.id)
+    assert fetched.source == Source.AI_EXTRACTED
+    assert fetched.status == PendingActionStatus.OPEN
+
+    async with sessionmaker() as s:
+        assert await verify_chain(s) is True
+        rows = (await s.execute(audit_log.select())).all()
+    assert len(rows) == 1
+    assert rows[0]._mapping["action"] == "pending_action.confirm_inclusion"
+    assert rows[0]._mapping["actor"] == "sam.super"
 
 
 async def test_rollback_leaves_nothing_persisted(sessionmaker):

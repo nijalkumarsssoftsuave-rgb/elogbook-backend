@@ -17,17 +17,19 @@ from src.api.errors.exceptions import ForbiddenError, NotFoundError
 from src.api.schemas.ai_extraction import CandidateActionResponse, ExtractCandidatesRequest
 from src.api.schemas.pending_action import (
     ActionResponse,
+    ConfirmInclusionRequest,
     CreateActionRequest,
     TransitionRequest,
 )
 from src.application.ai_extraction.extract_candidates import extract_candidate_actions
+from src.application.pending_actions.confirm_inclusion import confirm_inclusion
 from src.application.pending_actions.create_action import capture_action
 from src.application.pending_actions.list_actions import get_action, list_actions
 from src.application.pending_actions.repository import ActionFilter
 from src.application.pending_actions.transition_action import transition_action
 from src.core.logging import correlation_id_ctx
 from src.core.response import ok
-from src.domain.pending_actions.entities import PendingActionStatus, Priority
+from src.domain.pending_actions.entities import PendingActionStatus, Priority, Source
 from src.infrastructure.auth.token_validator import Principal
 
 router = APIRouter(prefix="/pending-actions", tags=["pending-actions"])
@@ -82,9 +84,8 @@ async def extract_candidates_endpoint(
 ) -> dict:
     """Suggest candidate actions from free text via ai-service (ES-341).
 
-    A read, not a mutation — nothing is persisted or audited here. A supervisor
-    confirms the candidates worth keeping via the existing ``POST /pending-actions``
-    with ``source: "ai"``, which is already captured and audited like any other action.
+    A read, not a mutation — nothing is persisted or audited here. A Supervisor confirms
+    the candidates worth keeping via ``POST /pending-actions/confirm-inclusion`` (ES-343).
     """
     candidates = await extract_candidate_actions(
         extractor, body.text, area=body.area, equipment=body.equipment
@@ -111,11 +112,37 @@ async def create_pending_action(
         uow.actions,
         issue=body.issue,
         priority=body.priority,
-        source=body.source,
+        source=Source.MANUAL,
         area=body.area,
         equipment=body.equipment,
         owner=body.owner,
         due_date=body.due_date,
+        audit=uow.audit,
+        actor=user.username,
+    )
+    return ok(ActionResponse.of(action).model_dump(), correlation_id=_cid())
+
+
+@router.post("/confirm-inclusion")
+async def confirm_inclusion_endpoint(
+    body: ConfirmInclusionRequest,
+    uow: PendingActionUoW,
+    user: Annotated[Principal, Depends(require_permission("action:confirm"))],
+) -> dict:
+    """A Supervisor confirms an AI-suggested candidate as a real pending action (ES-343).
+
+    Gated on ``action:confirm`` — Supervisor/Administrator only, distinct from the plain
+    ``action:write`` capture uses. ``source`` is always ``ai`` here; the audit trail
+    records ``pending_action.confirm_inclusion``, not a plain capture, so the Supervisor's
+    inclusion decision is traceable as its own event, not indistinguishable from a manual
+    entry.
+    """
+    action = await confirm_inclusion(
+        uow.actions,
+        issue=body.issue,
+        priority=body.priority,
+        area=body.area,
+        equipment=body.equipment,
         audit=uow.audit,
         actor=user.username,
     )
