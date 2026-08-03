@@ -6,7 +6,7 @@ so no SQL Server is required. Skips if SQLAlchemy/aiosqlite are not installed.
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -26,6 +26,7 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 from src.application.pending_actions.confirm_inclusion import confirm_inclusion  # noqa: E402
 from src.application.pending_actions.create_action import capture_action  # noqa: E402
 from src.application.pending_actions.list_actions import get_action, list_actions  # noqa: E402
+from src.application.pending_actions.overdue_sweep import find_overdue_actions  # noqa: E402
 from src.application.pending_actions.repository import ActionFilter  # noqa: E402
 from src.application.pending_actions.transition_action import transition_action  # noqa: E402
 from src.domain.pending_actions.entities import (  # noqa: E402
@@ -34,6 +35,9 @@ from src.domain.pending_actions.entities import (  # noqa: E402
     Source,
 )
 from src.infrastructure.audit.audit_writer import verify_chain  # noqa: E402
+from src.infrastructure.persistence.sql_pending_actions import (  # noqa: E402
+    SqlPendingActionRepository,
+)
 from src.infrastructure.persistence.tables import audit_log, metadata  # noqa: E402
 from src.infrastructure.persistence.unit_of_work import SqlUnitOfWork  # noqa: E402
 
@@ -228,6 +232,41 @@ async def test_created_at_range_filter_scopes_to_a_shift_window(sessionmaker):
             ),
         )
     assert [a.issue for a in result] == ["inside"]
+
+
+async def test_overdue_sweep_finds_only_genuinely_overdue_actions(sessionmaker):
+    """ES-353 — the sweep use case against real persistence, not just in-memory."""
+    # UTC, matching is_overdue()'s own datetime.now(UTC).date() — see test_overdue_sweep.py
+    today = datetime.now(UTC).date()
+    yesterday = today - timedelta(days=1)
+    tomorrow = today + timedelta(days=1)
+
+    async with SqlUnitOfWork(sessionmaker) as uow:
+        overdue = await capture_action(
+            uow.actions, issue="overdue", priority=Priority.HIGH, source=Source.MANUAL
+        )
+        not_due_yet = await capture_action(
+            uow.actions, issue="not due yet", priority=Priority.LOW, source=Source.MANUAL
+        )
+        finished_late = await capture_action(
+            uow.actions, issue="finished late", priority=Priority.LOW, source=Source.MANUAL
+        )
+
+    async with SqlUnitOfWork(sessionmaker) as uow:
+        overdue.due_date = yesterday
+        await uow.actions.update(overdue)
+        not_due_yet.due_date = tomorrow
+        await uow.actions.update(not_due_yet)
+        finished_late.due_date = yesterday
+        await uow.actions.update(finished_late)
+
+    async with SqlUnitOfWork(sessionmaker) as uow:
+        await transition_action(uow.actions, finished_late.id, PendingActionStatus.IN_PROGRESS)
+        await transition_action(uow.actions, finished_late.id, PendingActionStatus.COMPLETED)
+
+    async with sessionmaker() as s:
+        result = await find_overdue_actions(SqlPendingActionRepository(s))
+    assert [a.issue for a in result] == ["overdue"]
 
 
 async def test_list_filters(sessionmaker):
